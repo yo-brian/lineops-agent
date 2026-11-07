@@ -5,7 +5,7 @@ package release
 import (
 	"context"
 	"errors"
-	"lineop-agent/internal/traffic"
+	"lineops-agent/internal/traffic"
 )
 
 func (e Engine) Traffic(context.Context, string) ([]traffic.Sample, error) {

@@ -21,6 +21,8 @@ import (
 )
 
 const Template = "vless-tls-direct-v1"
+const PreRenderedTemplate = "pre-rendered-singbox-v1"
+const PortableVersionDir = "{{VERSION_DIR}}"
 
 var identifier = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$`)
 var uuidPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
@@ -72,6 +74,7 @@ type Request struct {
 	Fencing         uint64        `json:"fencing"`
 	TargetGroups    []string      `json:"target_groups"`
 	Model           Model         `json:"model"`
+	RenderedConfig  []byte        `json:"rendered_config,omitempty"`
 	Certificates    []Certificate `json:"certificates"`
 	Policies        PolicySet     `json:"policies"`
 	RecoverySeconds int           `json:"recovery_seconds"`
@@ -315,6 +318,79 @@ func SemanticDiff(old, next Model, targetGroups []string) ([]string, error) {
 	sort.Strings(out)
 	return out, nil
 }
+// ValidatePreRenderedModel validates only host-level safety invariants (node IDs,
+// non-overlapping unprivileged listen ports, and TLS certificate chains) when
+// the panel supplies a pre-rendered sing-box configuration. Protocol-specific
+// syntax is verified directly by `sing-box check` and isolated trial startup.
+func ValidatePreRenderedModel(m Model, certs []Certificate, now time.Time) error {
+	if len(m.Nodes) > 256 {
+		return errors.New("unsupported model/template")
+	}
+	assets := map[string]Certificate{}
+	for _, c := range certs {
+		if !identifier.MatchString(c.ID) || len(c.CertificatePEM) > 1<<20 || len(c.PrivateKeyPEM) > 1<<20 || len(c.TrustPEM) > 1<<20 {
+			return errors.New("invalid certificate asset")
+		}
+		if _, ok := assets[c.ID]; ok {
+			return errors.New("duplicate certificate")
+		}
+		assets[c.ID] = c
+	}
+	seen := map[string]bool{}
+	for i, n := range m.Nodes {
+		if !identifier.MatchString(n.ID) || !identifier.MatchString(n.GroupID) || n.Port < 1024 {
+			return errors.New("invalid node; only unprivileged ports supported")
+		}
+		if seen[n.ID] {
+			return errors.New("duplicate node or credential")
+		}
+		seen[n.ID] = true
+		ip, err := netip.ParseAddr(n.Listen)
+		if err != nil || ip.IsMulticast() || ip.IsLinkLocalUnicast() {
+			return errors.New("invalid listen address")
+		}
+		for _, other := range m.Nodes[:i] {
+			if PortConflict(n, other) {
+				return errors.New("overlapping TCP listener")
+			}
+		}
+		if !n.UsesCertificate() {
+			continue
+		}
+		c, ok := assets[n.CertificateID]
+		if !ok {
+			return errors.New("missing certificate dependency")
+		}
+		pair, err := tls.X509KeyPair(c.CertificatePEM, c.PrivateKeyPEM)
+		if err != nil {
+			return errors.New("certificate and key mismatch")
+		}
+		leaf, err := x509.ParseCertificate(pair.Certificate[0])
+		if err != nil {
+			return errors.New("invalid leaf certificate")
+		}
+		roots := x509.NewCertPool()
+		if !roots.AppendCertsFromPEM(c.TrustPEM) {
+			return errors.New("explicit trusted CA required")
+		}
+		intermediates := x509.NewCertPool()
+		for _, b := range pair.Certificate[1:] {
+			parsed, e := x509.ParseCertificate(b)
+			if e == nil {
+				intermediates.AddCert(parsed)
+			}
+		}
+		if _, err = leaf.Verify(x509.VerifyOptions{Roots: roots, Intermediates: intermediates, DNSName: n.ServerName, CurrentTime: now, KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}}); err != nil {
+			return errors.New("TLS chain, SAN or validity rejected")
+		}
+	}
+	return nil
+}
+
+func RenderPortable(m Model) ([]byte, error) {
+	return Render(m, PortableVersionDir)
+}
+
 func Render(m Model, versionDir string) ([]byte, error) {
 	nodes := append([]Node{}, m.Nodes...)
 	sort.Slice(nodes, func(i, j int) bool { return nodes[i].ID < nodes[j].ID })

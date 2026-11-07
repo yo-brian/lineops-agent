@@ -7,9 +7,9 @@ import (
 	"flag"
 	"fmt"
 	"golang.org/x/term"
-	"lineop-agent/internal/agent"
-	"lineop-agent/internal/agentconfig"
-	"lineop-agent/internal/agentmenu"
+	"lineops-agent/internal/agent"
+	"lineops-agent/internal/agentconfig"
+	"lineops-agent/internal/agentmenu"
 	"log"
 	"os"
 	"os/signal"
@@ -131,7 +131,11 @@ func main() {
 			log.Fatal("no Agent identity; supply api_key in config.yml, enrollment token via configured environment variable, or --enroll stdin")
 		}
 		if err = c.Enroll(ctx, token); err != nil {
-			log.Fatal(err)
+			if cfg.HasStaticCredential() && !*once {
+				log.Printf("initial API key enrollment deferred (will retry in loop): %v", err)
+			} else {
+				log.Fatal(err)
+			}
 		}
 	}
 	if *enroll {
@@ -157,9 +161,13 @@ func main() {
 		}
 		log.Print("Identity registered and persisted; awaiting real heartbeat")
 	}
-	if cfg != nil {
+	if cfg != nil && c.HasIdentity() {
 		if err = c.ValidateBinding(ctx); err != nil {
-			log.Fatal(err)
+			if cfg.HasStaticCredential() && !*once {
+				log.Printf("binding check deferred (will retry in loop): %v", err)
+			} else {
+				log.Fatal(err)
+			}
 		}
 	}
 	if *once {

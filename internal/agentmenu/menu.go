@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"lineop-agent/internal/agentconfig"
+	"lineops-agent/internal/agentconfig"
 	"net/url"
 	"os"
 	"os/exec"

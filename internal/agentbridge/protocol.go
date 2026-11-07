@@ -7,8 +7,8 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"lineop-agent/internal/release"
-	"lineop-agent/internal/traffic"
+	"lineops-agent/internal/release"
+	"lineops-agent/internal/traffic"
 	"net/http"
 	"regexp"
 	"strings"
@@ -127,7 +127,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
-		capabilities := []string{"singbox_lifecycle_v1", "singbox_restart_v1", "node_traffic_v2"}
+		capabilities := []string{"singbox_lifecycle_v1", "singbox_restart_v1", "node_traffic_v2", "pre_rendered_config_v1"}
 		if _, ok := h.engine.(lifecycleReconcileOperations); ok {
 			capabilities = append(capabilities, "singbox_reconcile_v1")
 		}

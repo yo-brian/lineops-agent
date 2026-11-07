@@ -16,7 +16,7 @@ import (
 	"strings"
 	"time"
 
-	"lineop-agent/internal/agentproto"
+	"lineops-agent/internal/agentproto"
 )
 
 type object map[string]any

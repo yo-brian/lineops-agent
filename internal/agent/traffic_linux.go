@@ -3,7 +3,7 @@
 package agent
 
 import (
-	"lineop-agent/internal/traffic"
+	"lineops-agent/internal/traffic"
 	"os"
 	"path/filepath"
 	"strconv"

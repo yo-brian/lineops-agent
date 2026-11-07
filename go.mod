@@ -1,4 +1,4 @@
-module lineop-agent
+module lineops-agent
 
 go 1.26.8
 

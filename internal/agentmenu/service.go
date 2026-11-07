@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/goccy/go-yaml"
-	"lineop-agent/internal/agentconfig"
+	"lineops-agent/internal/agentconfig"
 	"os"
 	"os/exec"
 	"os/user"

@@ -7,7 +7,7 @@ import (
 	"errors"
 	"time"
 
-	"lineop-agent/internal/traffic"
+	"lineops-agent/internal/traffic"
 )
 
 const HeartbeatGzip = "gzip"

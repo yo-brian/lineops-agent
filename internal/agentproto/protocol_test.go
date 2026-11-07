@@ -1,7 +1,7 @@
 package agentproto
 
 import (
-	"lineop-agent/internal/release"
+	"lineops-agent/internal/release"
 	"testing"
 )
 

@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"lineop-agent/internal/agentproto"
-	"lineop-agent/internal/release"
+	"lineops-agent/internal/agentproto"
+	"lineops-agent/internal/release"
 	"time"
 )
 

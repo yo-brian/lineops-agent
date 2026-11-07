@@ -10,7 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"lineop-agent/internal/traffic"
+	"lineops-agent/internal/traffic"
 	"net"
 	"net/http"
 	"sort"

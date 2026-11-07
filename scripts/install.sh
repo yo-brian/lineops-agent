@@ -17,7 +17,23 @@ case "$ARCH" in
     ;;
 esac
 
-SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
+PANEL_URL=""
+API_KEY=""
+VPS_ID=""
+NODE_ID=""
+RELEASE_URL="${LINEOPS_AGENT_RELEASE_URL:-https://github.com/yo-brian/lineops-agent/releases/latest/download}"
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --url) PANEL_URL="$2"; shift 2 ;;
+    --api-key) API_KEY="$2"; shift 2 ;;
+    --vps-id) VPS_ID="$2"; shift 2 ;;
+    --node-id) NODE_ID="$2"; shift 2 ;;
+    *) shift ;;
+  esac
+done
+
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-.}")" 2>/dev/null && pwd -P || pwd -P)
 BIN_SRC=""
 for candidate in \
   "$SCRIPT_DIR/lineops-agent-linux-$ARCH" \
@@ -29,9 +45,22 @@ for candidate in \
   fi
 done
 
+TMP_BIN=""
+cleanup() {
+  if [[ -n "$TMP_BIN" && -f "$TMP_BIN" ]]; then
+    rm -f "$TMP_BIN"
+  fi
+}
+trap cleanup EXIT
+
 if [[ -z "$BIN_SRC" ]]; then
-  echo "Error: Binary lineops-agent-linux-$ARCH not found next to install.sh or in ../bin/" >&2
-  exit 1
+  TMP_BIN=$(mktemp)
+  echo "Downloading lineops-agent-linux-$ARCH from $RELEASE_URL ..."
+  if ! curl --fail --silent --show-error --location "$RELEASE_URL/lineops-agent-linux-$ARCH" -o "$TMP_BIN"; then
+    echo "Error: Binary lineops-agent-linux-$ARCH not found locally and download failed" >&2
+    exit 1
+  fi
+  BIN_SRC="$TMP_BIN"
 fi
 
 # Stop legacy split services if migrating from old multi-service setup
@@ -64,8 +93,22 @@ for sb in "$SCRIPT_DIR/lineops-singbox-linux-$ARCH" "$SCRIPT_DIR/lineops-singbox
   fi
 done
 
-# Create default /etc/lineops/config.yml if not present
-if [[ ! -f /etc/lineops/config.yml ]]; then
+# Create or update /etc/lineops/config.yml
+if [[ -n "$PANEL_URL" || -n "$API_KEY" || -n "$VPS_ID" || -n "$NODE_ID" ]]; then
+  cat > /etc/lineops/config.yml <<YAML
+schema_version: 1
+panel:
+  url: "${PANEL_URL:-https://panel.example.com}"
+  api_key: "${API_KEY}"
+
+binding:
+  vps_id: "${VPS_ID}"
+  node_id: "${NODE_ID}"
+YAML
+  chmod 0600 /etc/lineops/config.yml
+  chown root:root /etc/lineops/config.yml
+  echo "Updated configuration at /etc/lineops/config.yml"
+elif [[ ! -f /etc/lineops/config.yml ]]; then
   cat > /etc/lineops/config.yml <<'YAML'
 schema_version: 1
 panel:
@@ -106,6 +149,9 @@ UNIT
 
 systemctl daemon-reload
 systemctl enable lineops-agent.service
+if [[ -n "$PANEL_URL" && -n "$API_KEY" && ( -n "$VPS_ID" || -n "$NODE_ID" ) ]]; then
+  systemctl restart lineops-agent.service
+fi
 
 echo "========================================================"
 echo "LineOps Agent installed successfully!"

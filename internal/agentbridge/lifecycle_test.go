@@ -3,7 +3,7 @@ package agentbridge
 import (
 	"context"
 	"encoding/json"
-	"lineop-agent/internal/release"
+	"lineops-agent/internal/release"
 	"net/http/httptest"
 	"strings"
 	"testing"

@@ -4,8 +4,8 @@ import (
 	"context"
 	"slices"
 
-	"lineop-agent/internal/agentproto"
-	"lineop-agent/internal/traffic"
+	"lineops-agent/internal/agentproto"
+	"lineops-agent/internal/traffic"
 )
 
 func (c *Client) sendHeartbeat(ctx context.Context, inventory agentproto.Inventory) error {

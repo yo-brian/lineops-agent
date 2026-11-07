@@ -6,7 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"lineop-agent/internal/traffic"
+	"lineops-agent/internal/traffic"
 	"net"
 	"os"
 	"os/exec"

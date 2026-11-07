@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"lineop-agent/internal/release"
+	"lineops-agent/internal/release"
 )
 
 type reconciliationProbe struct {

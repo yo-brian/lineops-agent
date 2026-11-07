@@ -2,6 +2,6 @@
 
 package agent
 
-import "lineop-agent/internal/traffic"
+import "lineops-agent/internal/traffic"
 
 func hostTraffic() []traffic.Sample { return nil }

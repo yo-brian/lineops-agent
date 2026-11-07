@@ -5,7 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
-	"lineop-agent/internal/release"
+	"lineops-agent/internal/release"
 	"net/http"
 	"time"
 )

@@ -7,7 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"lineop-agent/internal/agentproto"
+	"lineops-agent/internal/agentproto"
 	"os"
 	"os/exec"
 	"path/filepath"

@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"lineop-agent/internal/agentproto"
-	"lineop-agent/internal/traffic"
+	"lineops-agent/internal/agentproto"
+	"lineops-agent/internal/traffic"
 )
 
 func TestHeartbeatNegotiatesAndRecoversLostAcknowledgement(t *testing.T) {

@@ -10,11 +10,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"lineop-agent/internal/agentbridge"
-	"lineop-agent/internal/agentconfig"
-	"lineop-agent/internal/agentproto"
-	"lineop-agent/internal/release"
-	"lineop-agent/internal/traffic"
+	"lineops-agent/internal/agentbridge"
+	"lineops-agent/internal/agentconfig"
+	"lineops-agent/internal/agentproto"
+	"lineops-agent/internal/release"
+	"lineops-agent/internal/traffic"
 	"net/http"
 	"net/url"
 	"os"
@@ -99,6 +99,18 @@ func New(panel, stateDir, caFile string) (*Client, error) {
 	return cl, nil
 }
 func (c *Client) request(ctx context.Context, method, path string, input, out any) (int, error) {
+	status, err := c.doRequest(ctx, method, path, input, out)
+	if status == 401 && path != "/register" && c.StaticCredential != "" {
+		c.identity = identity{}
+		_ = c.removeState("identity.json")
+		_ = c.removeState("enrollment-pending.json")
+		if enrollErr := c.Enroll(ctx, c.StaticCredential); enrollErr == nil {
+			return c.doRequest(ctx, method, path, input, out)
+		}
+	}
+	return status, err
+}
+func (c *Client) doRequest(ctx context.Context, method, path string, input, out any) (int, error) {
 	var reader io.Reader
 	compressed := false
 	if input != nil {
@@ -126,8 +138,18 @@ func (c *Client) request(ctx context.Context, method, path string, input, out an
 	if compressed {
 		req.Header.Set("Content-Encoding", "gzip")
 	}
+	if vpsID := c.binding.VPSID; vpsID != "" {
+		req.Header.Set("X-LineOps-VPS-ID", vpsID)
+	} else if c.identity.VPSID != "" {
+		req.Header.Set("X-LineOps-VPS-ID", c.identity.VPSID)
+	}
+	if c.binding.NodeID != "" {
+		req.Header.Set("X-LineOps-Node-ID", c.binding.NodeID)
+	}
 	if c.identity.Token != "" {
 		req.Header.Set("Authorization", "Bearer "+c.identity.Token)
+	} else if c.StaticCredential != "" && path != "/register" {
+		req.Header.Set("Authorization", "Bearer "+c.StaticCredential)
 	}
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
@@ -230,11 +252,20 @@ func (c *Client) Enroll(ctx context.Context, token string) error {
 	c.identity = result
 	return c.removeState("enrollment-pending.json")
 }
+func (c *Client) EnsureEnrolled(ctx context.Context) error {
+	if c.identity.Token == "" && c.StaticCredential != "" {
+		return c.Enroll(ctx, c.StaticCredential)
+	}
+	return nil
+}
 func (c *Client) Heartbeat(ctx context.Context) error {
+	if err := c.EnsureEnrolled(ctx); err != nil {
+		return err
+	}
 	if err := c.ResumeRotation(ctx); err != nil {
 		return err
 	}
-	if c.identity.Token == "" {
+	if c.identity.Token == "" && c.StaticCredential == "" {
 		return errors.New("agent not enrolled")
 	}
 	i := Inventory()
@@ -255,6 +286,9 @@ func (c *Client) Heartbeat(ctx context.Context) error {
 			}
 			if capability == "singbox_lifecycle_v1" {
 				i.SingBoxLifecycle = true
+			}
+			if capability == "pre_rendered_config_v1" {
+				i.PreRenderedConfig = err == nil
 			}
 		}
 		i.ReleaseExecutor = err == nil
@@ -367,6 +401,9 @@ type receipt struct {
 }
 
 func (c *Client) Poll(ctx context.Context) error {
+	if err := c.EnsureEnrolled(ctx); err != nil {
+		return err
+	}
 	if err := c.reconcileLifecycle(ctx); err != nil {
 		return err
 	}

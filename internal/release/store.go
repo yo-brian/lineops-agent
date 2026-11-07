@@ -125,7 +125,7 @@ type Manifest struct {
 	Files   map[string]string `json:"files"`
 }
 
-func freezeVersion(dir, name string, desired, effective Model, certs []Certificate) (Manifest, error) {
+func freezeVersion(dir, name string, desired, effective Model, certs []Certificate, renderedConfig ...[]byte) (Manifest, error) {
 	vdir := filepath.Join(dir, "versions", name)
 	if _, e := os.Lstat(vdir); !errors.Is(e, os.ErrNotExist) {
 		return Manifest{}, errors.New("immutable version already exists")
@@ -135,9 +135,15 @@ func freezeVersion(dir, name string, desired, effective Model, certs []Certifica
 	}
 	files := map[string][]byte{}
 	var e error
-	files["config.json"], e = Render(effective, vdir)
-	if e != nil {
-		return Manifest{}, e
+	if len(renderedConfig) > 0 && len(renderedConfig[0]) > 0 {
+		materialized := strings.ReplaceAll(string(renderedConfig[0]), PortableVersionDir, filepath.ToSlash(vdir))
+		files["config.json"] = []byte(materialized)
+		files["rendered.json"] = renderedConfig[0]
+	} else {
+		files["config.json"], e = Render(effective, vdir)
+		if e != nil {
+			return Manifest{}, e
+		}
 	}
 	var runtime RuntimeConfig
 	if err := readJSON(filepath.Join(dir, "runtime.json"), &runtime); err == nil && runtime.TrafficAPI {

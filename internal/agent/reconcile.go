@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"lineop-agent/internal/release"
+	"lineops-agent/internal/release"
 )
 
 type reconciliationExecutor interface {

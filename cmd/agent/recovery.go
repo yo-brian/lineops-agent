@@ -6,8 +6,8 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"lineop-agent/internal/agentconfig"
-	"lineop-agent/internal/release"
+	"lineops-agent/internal/agentconfig"
+	"lineops-agent/internal/release"
 	"os"
 	"time"
 )

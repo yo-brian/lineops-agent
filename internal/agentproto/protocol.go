@@ -5,8 +5,8 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"lineop-agent/internal/release"
-	"lineop-agent/internal/traffic"
+	"lineops-agent/internal/release"
+	"lineops-agent/internal/traffic"
 	"time"
 )
 
@@ -61,6 +61,7 @@ type Inventory struct {
 	UptimeSeconds      uint64               `json:"uptime_seconds"`
 	CPUCount           int                  `json:"cpu_count"`
 	SingBoxLifecycle   bool                 `json:"singbox_lifecycle"`
+	PreRenderedConfig  bool                 `json:"pre_rendered_config,omitempty"`
 	AgentVersion       string               `json:"agent_version"`
 	ReleaseExecutor    bool                 `json:"release_executor"`
 	ReleaseTemplates   []string             `json:"release_templates,omitempty"`

@@ -7,7 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"lineop-agent/internal/traffic"
+	"lineops-agent/internal/traffic"
 	"reflect"
 	"strings"
 	"testing"

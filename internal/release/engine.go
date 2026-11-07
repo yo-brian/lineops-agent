@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"lineop-agent/internal/agentconfig"
+	"lineops-agent/internal/agentconfig"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -368,7 +368,11 @@ func (e Engine) applyLocked(ctx context.Context, req Request, policyOnly bool) (
 	if req.RecoverySeconds < 15 || req.RecoverySeconds > 300 {
 		return reject(errors.New("recovery window must be 15..300 seconds"))
 	}
-	if err = validateShape(req.Model); err != nil {
+	if len(req.RenderedConfig) > 0 {
+		if err = ValidatePreRenderedModel(req.Model, req.Certificates, time.Now()); err != nil {
+			return reject(err)
+		}
+	} else if err = validateShape(req.Model); err != nil {
 		return reject(err)
 	}
 	if j, x := activeJournal(dir); x == nil {
@@ -414,7 +418,11 @@ func (e Engine) applyLocked(ctx context.Context, req Request, policyOnly bool) (
 	if err != nil {
 		return reject(err)
 	}
-	if err = ValidateModel(effective, req.Certificates, time.Now()); err != nil {
+	if len(req.RenderedConfig) > 0 {
+		if err = ValidatePreRenderedModel(effective, req.Certificates, time.Now()); err != nil {
+			return reject(err)
+		}
+	} else if err = ValidateModel(effective, req.Certificates, time.Now()); err != nil {
 		return reject(err)
 	}
 	if err = e.checkPorts(req.InstanceID, req.Model); err != nil {
@@ -426,7 +434,7 @@ func (e Engine) applyLocked(ctx context.Context, req Request, policyOnly bool) (
 		return s, err
 	}
 	version := fmt.Sprintf("v-%d-%d", req.Generation, req.Fencing)
-	if _, err = freezeVersion(dir, version, req.Model, effective, req.Certificates); err != nil {
+	if _, err = freezeVersion(dir, version, req.Model, effective, req.Certificates, req.RenderedConfig); err != nil {
 		return s, err
 	}
 	vdir := filepath.Join(dir, "versions", version)
@@ -698,11 +706,16 @@ func (e Engine) recoverLocked(ctx context.Context, r RuntimeConfig, dir string, 
 		if err != nil {
 			return fail("recovery_missing_dependencies", err)
 		}
-		if err = ValidateModel(effective, certs, time.Now()); err != nil {
+		oldRendered, _ := readRegular(filepath.Join(dir, "versions", j.OldVersion, "rendered.json"))
+		if len(oldRendered) > 0 {
+			if err = ValidatePreRenderedModel(effective, certs, time.Now()); err != nil {
+				return fail("recovery_certificate_invalid", err)
+			}
+		} else if err = ValidateModel(effective, certs, time.Now()); err != nil {
 			return fail("recovery_certificate_invalid", err)
 		}
 		version := fmt.Sprintf("r-%d-%d", j.Generation, j.Fencing)
-		if _, err = freezeVersion(dir, version, desired, effective, certs); err != nil {
+		if _, err = freezeVersion(dir, version, desired, effective, certs, oldRendered); err != nil {
 			return fail("recovery_freeze_failed", err)
 		}
 		vdir := filepath.Join(dir, "versions", version)

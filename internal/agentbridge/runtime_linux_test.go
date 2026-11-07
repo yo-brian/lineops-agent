@@ -13,7 +13,7 @@ import (
 	"encoding/hex"
 	"encoding/pem"
 	"fmt"
-	"lineop-agent/internal/release"
+	"lineops-agent/internal/release"
 	"math/big"
 	"net"
 	"os"

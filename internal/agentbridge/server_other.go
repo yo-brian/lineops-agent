@@ -4,7 +4,7 @@ package agentbridge
 
 import (
 	"context"
-	"lineop-agent/internal/agentconfig"
+	"lineops-agent/internal/agentconfig"
 )
 
 type ServerConfig struct {

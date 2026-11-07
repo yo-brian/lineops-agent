@@ -1,6 +1,6 @@
-# lineop-agent
+# lineops-agent
 
-`lineop-agent` 是从 LineOps 面板独立出来的 **单二进制、单服务** 节点端程序（定位类似 `xboard-node`）。
+`lineops-agent` 是从 LineOps 面板独立出来的 **单二进制、单服务** 节点端程序（定位类似 `xboard-node`）。
 
 ## 核心特性
 
@@ -24,7 +24,7 @@
 ## 目录结构
 
 ```text
-lineop-agent/
+lineops-agent/
 ├── cmd/agent/             # 单二进制入口（内置守护进程、CLI 交互菜单、本地执行引擎与恢复子命令）
 ├── internal/
 │   ├── agent/             # 面板心跳、API Key 自动注册、日志采集、命令拉取

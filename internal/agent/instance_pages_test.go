@@ -8,7 +8,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"lineop-agent/internal/agentproto"
+	"lineops-agent/internal/agentproto"
 )
 
 func TestInstancePagesProduceBoundedExplicitHeartbeats(t *testing.T) {

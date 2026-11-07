@@ -3,7 +3,7 @@
 package agent
 
 import (
-	"lineop-agent/internal/agentproto"
+	"lineops-agent/internal/agentproto"
 	"runtime"
 )
 

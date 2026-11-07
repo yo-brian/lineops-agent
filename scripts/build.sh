@@ -3,7 +3,7 @@ set -Eeuo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 mkdir -p bin
 
-VERSION="${VERSION:-0.10.12-dev}"
+VERSION="${VERSION:-0.10.14-dev}"
 LDFLAGS="-s -w -X lineops-agent/internal/agentproto.Version=${VERSION}"
 
 for arch in amd64 arm64; do

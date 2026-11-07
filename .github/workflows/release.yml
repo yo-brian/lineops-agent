@@ -48,7 +48,7 @@ jobs:
             # Find the latest version tag sorted by version
             LATEST_TAG=$(git tag -l | grep -E '^v?[0-9]+\.[0-9]+\.[0-9]+' | sort -V | tail -n 1 || true)
             if [[ -z "$LATEST_TAG" ]]; then
-              RAW_TAG="v0.10.13-dev"
+              RAW_TAG="v0.10.14-dev"
             elif [[ "$LATEST_TAG" =~ ^(v?[0-9]+\.[0-9]+\.)([0-9]+)(.*)$ ]]; then
               PREFIX="${BASH_REMATCH[1]}"
               PATCH="${BASH_REMATCH[2]}"

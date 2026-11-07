@@ -96,8 +96,11 @@ func run(name string, args ...string) error {
 	return c.Run()
 }
 func (m *menu) loadConfig() error {
-	m.paths = agentconfig.LegacyPaths()
+	m.paths = agentconfig.NewPaths()
 	if _, e := os.Stat(agentconfig.DefaultFile); os.IsNotExist(e) {
+		if _, legErr := os.Stat("/opt/lineops-agent"); legErr == nil {
+			m.paths = agentconfig.LegacyPaths()
+		}
 		return nil
 	} else if e != nil {
 		return e
@@ -236,7 +239,15 @@ func (m *menu) action(choice string) error {
 	case "16", "config":
 		return m.configureConfigYML()
 	case "14":
-		fmt.Println("安装、升级、重新安装及卸载：可直接编辑 /etc/lineops/config.yml（填写 panel.url、panel.api_key、binding.vps_id 或 binding.node_id）后执行 sudo lineops-agent restart，或在面板 → VPS 详情 → Agent 管理操作。")
+		fmt.Println("── 统一目录规范 (/etc/lineops) ──")
+		fmt.Println("  配置文件: /etc/lineops/config.yml")
+		fmt.Println("  程序目录: /etc/lineops/bin (lineops-agent, lineops-singbox)")
+		fmt.Println("  节点实例: /etc/lineops/instances/<instance_id>/config.json")
+		fmt.Println("  运行内核: /etc/lineops/sing-box")
+		fmt.Println("  状态目录: /etc/lineops/state/agent, /etc/lineops/state/lifecycle")
+		fmt.Println("── 从 GitHub 拉取安装 / 升级 ──")
+		fmt.Println("  升级或迁移命令: curl -fsSL https://github.com/yo-brian/lineops-agent/releases/latest/download/install.sh | sudo bash -s -- --upgrade")
+		fmt.Println("  强制清理重装:   curl -fsSL https://github.com/yo-brian/lineops-agent/releases/latest/download/install.sh | sudo bash -s -- --clean")
 		return nil
 	case "2", "3", "4", "5", "6", "7", "10", "11":
 	default:

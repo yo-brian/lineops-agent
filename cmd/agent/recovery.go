@@ -36,7 +36,7 @@ func runRecovery(args []string) error {
 	}
 	f := flag.NewFlagSet(args[0], flag.ContinueOnError)
 	configFile := f.String("config", "", "shared Agent YAML config")
-	root := f.String("root", "/var/lib/lineops/instances", "root-owned instance registrations")
+	root := f.String("root", "/etc/lineops/instances", "root-owned instance registrations")
 	id := f.String("instance", "", "stable instance ID")
 	input := f.String("input", "", "local restricted JSON input file")
 	task := f.String("task", "", "expected task ID")
@@ -54,6 +54,17 @@ func runRecovery(args []string) error {
 		return errors.New("unexpected arguments")
 	}
 	var paths agentconfig.Paths
+	rootExplicit := false
+	f.Visit(func(fl *flag.Flag) {
+		if fl.Name == "root" {
+			rootExplicit = true
+		}
+	})
+	if *configFile == "" && !rootExplicit {
+		if _, e := os.Stat(agentconfig.DefaultFile); e == nil {
+			*configFile = agentconfig.DefaultFile
+		}
+	}
 	if *configFile != "" {
 		c, e := agentconfig.Load(*configFile)
 		if e != nil {

@@ -80,6 +80,7 @@ func (m *menu) configureConfigYML() error {
 	if m.cfg != nil {
 		cfg = *m.cfg
 	}
+	cfg.Paths = agentconfig.NewPaths()
 	fmt.Println("配置 /etc/lineops/config.yml（类似 xboard-node，填写面板网址、API Key、VPS ID 或节点 ID 即可自动通信与接管）：")
 	urlInput, err := m.read("面板通信网址 (HTTPS Origin，如 https://panel.example.com)", cfg.Panel.URL)
 	if err != nil {

@@ -43,7 +43,7 @@ func main() {
 	configFile := flag.String("config", "", "YAML configuration file")
 	printConfig := flag.Bool("print-config", false, "validate config and print resolved JSON without credentials")
 	panel := flag.String("panel", "", "HTTPS panel origin")
-	state := flag.String("state-dir", "/var/lib/lineops-agent", "protected state directory")
+	state := flag.String("state-dir", "/etc/lineops/state/agent", "protected state directory")
 	ca := flag.String("ca-file", "", "optional trusted test/private CA")
 	enroll := flag.Bool("enroll", false, "read single-use registration token from stdin")
 	inventory := flag.Bool("inventory", false, "print local read-only inventory and exit")

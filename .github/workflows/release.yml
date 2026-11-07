@@ -78,8 +78,16 @@ jobs:
           VERSION: ${{ steps.meta.outputs.version }}
         run: |
           bash scripts/build.sh
+          go mod download github.com/sagernet/sing-box@v1.14.0
+          SB_SRC=$(go list -m -f '{{.Dir}}' github.com/sagernet/sing-box@v1.14.0)
+          for arch in amd64 arm64; do
+            (cd "$SB_SRC" && CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build -mod=readonly -buildvcs=false -trimpath \
+              -tags with_quic,with_utls,with_clash_api,with_v2ray_api \
+              -ldflags '-s -w -X github.com/sagernet/sing-box/constant.Version=1.14.0' \
+              -o "$GITHUB_WORKSPACE/bin/lineops-singbox-linux-$arch" ./cmd/sing-box)
+          done
           cp scripts/install.sh bin/install.sh
-          (cd bin && sha256sum lineops-agent-linux-amd64 lineops-agent-linux-arm64 install.sh > SHA256SUMS)
+          (cd bin && sha256sum lineops-agent-linux-amd64 lineops-agent-linux-arm64 lineops-singbox-linux-amd64 lineops-singbox-linux-arm64 install.sh > SHA256SUMS)
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -92,5 +100,7 @@ jobs:
           files: |
             bin/lineops-agent-linux-amd64
             bin/lineops-agent-linux-arm64
+            bin/lineops-singbox-linux-amd64
+            bin/lineops-singbox-linux-arm64
             bin/install.sh
             bin/SHA256SUMS

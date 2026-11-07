@@ -3,13 +3,16 @@ $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 Set-Location $projectRoot
 New-Item -ItemType Directory -Force bin | Out-Null
 
+$version = if ($env:VERSION) { $env:VERSION } else { '0.10.12-dev' }
+$ldflags = "-s -w -X lineops-agent/internal/agentproto.Version=$version"
+
 try {
     $env:GOOS = 'linux'
     $env:CGO_ENABLED = '0'
     foreach ($arch in @('amd64', 'arm64')) {
         $env:GOARCH = $arch
-        Write-Host "Building lineops-agent-linux-$arch ..."
-        go build -trimpath -ldflags="-s -w" -o "bin/lineops-agent-linux-$arch" ./cmd/agent
+        Write-Host "Building lineops-agent-linux-$arch (version: $version) ..."
+        go build -trimpath -ldflags="$ldflags" -o "bin/lineops-agent-linux-$arch" ./cmd/agent
         if ($LASTEXITCODE -ne 0) {
             throw "Build failed for $arch"
         }

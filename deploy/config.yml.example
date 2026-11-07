@@ -1,0 +1,69 @@
+# LineOps 配置格式 v1（需要包含 config.yml 支持的新版 Agent）
+# 新安装保存到 /etc/lineops/config.yml，由 root:lineops-agent 持有，权限 0640。
+# Agent 可读取配置，但不能修改路径或绑定；接入密钥不保存在本文件。
+# 不要把含真实凭据的文件提交到代码仓库或发给他人。
+schema_version: 1
+
+panel:
+  # 面板 HTTPS 地址，不填写 /api/v1/agent，程序内部拼接接口路径。
+  url: "https://panel.example.com"
+  # 面板通信密钥（API Key）。填写后无需交互输入 Token，更换 VPS 时保留此配置即可自动接管。
+  api_key: ""
+  # 留空表示使用系统 CA；私有 CA 填写本机证书的绝对路径。
+  ca_file: ""
+
+enrollment:
+  # 仅在尚无正式身份时注册。下面的环境变量由安装器读取。
+  # 凭据由面板签发，受有效期和目标资源范围限制，不是永久共享密钥。
+  token_env: "LINEOPS_ENROLLMENT_TOKEN"
+  # register：首次接入；migrate：换机接管，必须持有面板专门签发的迁移凭据。
+  # 在面板“高级管理”中签发换机配置与凭据，先停止旧机器的服务。
+  # 新机器心跳确认后，面板按原实例和节点 ID 自动安装、发布并验证。
+  # 已有正式身份时，普通启动只校验绑定，不自动重新注册或执行迁移。
+  mode: "register"
+
+binding:
+  # 以下均为面板中已有记录的 ID（填写 vps_id 或任一节点的 node_id 均可自动定位 VPS）。
+  vps_id: "替换为面板中的VPS-ID"
+  node_id: ""
+  instances:
+    - id: "替换为实例ID"
+      node_ids:
+        - "替换为节点ID-1"
+        - "替换为节点ID-2"
+  # 面板必须验证这些资源确实属于本次授权范围。
+  # 此列表不创建、删除或强制抢占面板上的节点；变更绑定需面板确认。
+
+paths:
+  # Agent、Executor、Recovery 和 VERSION 所在目录，root 可写。
+  agent_bin_dir: "/etc/lineops/bin"
+  # 身份及待确认回执目录；仅此 Agent 状态目录允许 lineops-agent 用户写入。
+  agent_state_dir: "/etc/lineops/state/agent"
+  # 每实例配置、版本、发布日志，root 管理。
+  instances_dir: "/etc/lineops/instances"
+  # sing-box 按实例分目录保存，避免不同实例升级互相影响：
+  # <singbox_dir>/<实例ID>/sing-box
+  singbox_dir: "/etc/lineops/sing-box"
+  # Agent 升级备份与状态记录，root 管理。
+  upgrades_dir: "/etc/lineops/backups/agent-upgrades"
+  # 生命周期操作记录，root 管理。
+  lifecycle_dir: "/etc/lineops/state/lifecycle"
+  # 运行时 socket 放在 /run，重启后自动重建，不作为持久数据保存。
+  executor_socket: "/run/lineops-executor/executor.sock"
+
+# 兼容旧版安装：将上面的 paths 整段替换为以下内容，保留实际旧文件。
+# paths:
+#   agent_bin_dir: "/opt/lineops-agent"
+#   agent_state_dir: "/var/lib/lineops-agent"
+#   instances_dir: "/var/lib/lineops/instances"
+#   singbox_dir: "/opt/lineops-singbox"
+#   upgrades_dir: "/var/lib/lineops-agent-upgrades"
+#   lifecycle_dir: "/var/lib/lineops/lifecycle"
+#   executor_socket: "/run/lineops-executor/executor.sock"
+# 私有 CA 如原来位于 /etc/lineops-agent/ca.pem，在 panel.ca_file 填写该路径。
+# 旧版 identity.json 继续从 agent_state_dir 读取，不复制到新目录重新注册。
+# 改路径不等于迁移文件；已有安装需通过迁移流程同步更新 systemd、
+# 实例 runtime.json、权限和恢复程序记录，不能只编辑本文件后重启。
+
+# systemd unit 仍由系统放在 /etc/systemd/system，日志仍通过 journalctl 查看。
+# 协议、端口、用户授权和节点证书由面板发布，不在本文件重复维护。

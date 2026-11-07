@@ -170,7 +170,10 @@ func (e Engine) restartSingbox(ctx context.Context, request LifecycleRequest, re
 }
 
 func (e Engine) installSingbox(ctx context.Context, r LifecycleRequest, result *LifecycleResult) error {
-	if _, err := os.Lstat(filepath.Join(e.Root, r.InstanceID)); !errors.Is(err, os.ErrNotExist) {
+	instDir := filepath.Join(e.Root, r.InstanceID)
+	if _, err := os.Lstat(instDir); err == nil {
+		_ = os.RemoveAll(instDir)
+	} else if !errors.Is(err, os.ErrNotExist) {
 		return errors.New("instance_already_registered")
 	}
 	base := filepath.Join(e.ManagedPaths().SingboxDir, r.InstanceID)
@@ -178,7 +181,9 @@ func (e Engine) installSingbox(ctx context.Context, r LifecycleRequest, result *
 		return errors.New("singbox_directory_unsafe")
 	}
 	binary := filepath.Join(base, "sing-box")
-	if _, err := os.Lstat(binary); !errors.Is(err, os.ErrNotExist) {
+	if _, err := os.Lstat(binary); err == nil {
+		_ = os.Remove(binary)
+	} else if !errors.Is(err, os.ErrNotExist) {
 		return errors.New("singbox_binary_already_exists")
 	}
 	data, err := e.lifecycleBinary(ctx)

@@ -73,6 +73,10 @@ install -d -m 0700 -o root -g root \
   /etc/lineops/state/agent \
   /etc/lineops/state/lifecycle \
   /etc/lineops/backups/agent-upgrades
+for owned_dir in /etc/lineops /etc/lineops/bin /etc/lineops/state/agent; do
+  printf 'lineops-agent-v1\n' > "$owned_dir/.lineops-owned"
+  chmod 0600 "$owned_dir/.lineops-owned"
+done
 
 # Before cleaning legacy directories, salvage existing sing-box binary & legacy panel/vps binding if needed
 if [[ ! -f /etc/lineops/bin/lineops-singbox ]]; then
@@ -110,12 +114,19 @@ if [[ "$LEGACY_DETECTED" -eq 1 || "$FORCE_CLEAN" -eq 1 ]]; then
   rm -rf /etc/systemd/system/lineops-agent.service.d
 
   # Stop and remove legacy sing-box instance units so Agent can recreate them cleanly under /etc/lineops
-  for unit_file in /etc/systemd/system/lineops-singbox@*.service; do
+  for unit_file in \
+    /etc/systemd/system/lineops-sing-box-*.service \
+    /etc/systemd/system/lineops-policy-*.service \
+    /etc/systemd/system/lineops-policy-*.timer \
+    /etc/systemd/system/lineops-singbox@*.service; do
     [[ -e "$unit_file" || -L "$unit_file" ]] || continue
     unit_name=$(basename "$unit_file")
     systemctl disable --now "$unit_name" >/dev/null 2>&1 || true
     rm -f "$unit_file"
   done
+
+  userdel lineops-agent >/dev/null 2>&1 || true
+  groupdel lineops-agent >/dev/null 2>&1 || true
 
   rm -rf \
     /opt/lineops-agent \

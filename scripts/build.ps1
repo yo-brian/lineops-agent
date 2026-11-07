@@ -3,7 +3,7 @@ $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 Set-Location $projectRoot
 New-Item -ItemType Directory -Force bin | Out-Null
 
-$version = if ($env:VERSION) { $env:VERSION } else { '0.10.14-dev' }
+$version = if ($env:VERSION) { $env:VERSION } else { '0.10.16-dev' }
 $ldflags = "-s -w -X lineops-agent/internal/agentproto.Version=$version"
 
 try {

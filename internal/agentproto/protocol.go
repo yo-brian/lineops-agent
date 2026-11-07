@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-var Version = "0.10.14-dev"
+var Version = "0.10.16-dev"
 
 type Lease struct {
 	TaskID       string          `json:"task_id"`

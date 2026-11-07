@@ -2,18 +2,24 @@ name: Release
 
 on:
   push:
+    branches:
+      - main
     tags:
       - 'v*'
       - '[0-9]+.[0-9]+.[0-9]*'
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Release tag / version (e.g. v0.10.12-dev or 0.10.12-dev)'
-        required: true
-        default: 'v0.10.12-dev'
+        description: 'Optional custom tag (leave empty to auto-increment from latest tag)'
+        required: false
+        default: ''
 
 permissions:
   contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 jobs:
   release:
@@ -30,22 +36,42 @@ jobs:
           go-version-file: 'go.mod'
           check-latest: true
 
-      - name: Resolve version and tag
+      - name: Resolve or auto-increment version and tag
         id: meta
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          git fetch --tags --force
+          if [[ "${{ github.event_name }}" == "push" && "${GITHUB_REF}" == refs/tags/* ]]; then
+            RAW_TAG="${GITHUB_REF_NAME}"
+          elif [[ "${{ github.event_name }}" == "workflow_dispatch" && -n "${{ inputs.tag }}" ]]; then
             RAW_TAG="${{ inputs.tag }}"
           else
-            RAW_TAG="${GITHUB_REF_NAME}"
+            # Find the latest version tag sorted by version
+            LATEST_TAG=$(git tag -l | grep -E '^v?[0-9]+\.[0-9]+\.[0-9]+' | sort -V | tail -n 1 || true)
+            if [[ -z "$LATEST_TAG" ]]; then
+              RAW_TAG="v0.10.13-dev"
+            elif [[ "$LATEST_TAG" =~ ^(v?[0-9]+\.[0-9]+\.)([0-9]+)(.*)$ ]]; then
+              PREFIX="${BASH_REMATCH[1]}"
+              PATCH="${BASH_REMATCH[2]}"
+              SUFFIX="${BASH_REMATCH[3]}"
+              NEXT_PATCH=$((PATCH + 1))
+              RAW_TAG="${PREFIX}${NEXT_PATCH}${SUFFIX}"
+            else
+              RAW_TAG="v0.10.14-dev"
+            fi
+
+            # Create and push the new tag if it does not exist yet
+            if ! git rev-parse "$RAW_TAG" >/dev/null 2>&1; then
+              git config user.name "github-actions[bot]"
+              git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+              git tag "$RAW_TAG"
+              git push origin "$RAW_TAG"
+            fi
           fi
+
           VERSION="${RAW_TAG#v}"
           echo "tag=${RAW_TAG}" >> "$GITHUB_OUTPUT"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-          if [[ "$VERSION" == *-* ]]; then
-            echo "prerelease=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "prerelease=false" >> "$GITHUB_OUTPUT"
-          fi
+          echo "Resolved release tag: ${RAW_TAG} (version: ${VERSION})"
 
       - name: Build Linux binaries (amd64 & arm64)
         env:
@@ -60,7 +86,8 @@ jobs:
         with:
           tag_name: ${{ steps.meta.outputs.tag }}
           name: ${{ steps.meta.outputs.tag }}
-          prerelease: ${{ steps.meta.outputs.prerelease }}
+          prerelease: false
+          make_latest: true
           generate_release_notes: true
           files: |
             bin/lineops-agent-linux-amd64

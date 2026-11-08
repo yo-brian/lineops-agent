@@ -51,7 +51,7 @@ func main() {
 	rotate := flag.Bool("rotate", false, "durably rotate identity with resumable confirmation and exit")
 	executorSocket := flag.String("executor-socket", "", "optional root-owned Unix socket for explicitly registered managed instances")
 	flag.Usage = func() {
-		fmt.Fprintln(os.Stderr, "交互管理：sudo lineops-agent（或 lineops-agent menu）\n快捷命令：config、status、log、singbox-log、singbox-restart、start、stop、restart、enable、disable、bbr、unbind\nconfig 配置面板地址/API Key/节点绑定；start/stop/restart/enable/disable 只操作 Agent；singbox-restart 重启 sing-box 实例；unbind 解除面板绑定并保留节点。\n后台 Agent 参数：")
+		fmt.Fprintln(os.Stderr, "交互管理：sudo lineops-agent（或 lineops-agent menu）\n快捷命令：doctor、config、status、log、singbox-log、singbox-restart、start、stop、restart、enable、disable、bbr、unbind\ndoctor 一键全面自检；config 配置面板地址/API Key/节点绑定；start/stop/restart/enable/disable 只操作 Agent；singbox-restart 重启 sing-box 实例；unbind 解除面板绑定并保留节点。\n后台 Agent 参数：")
 		flag.PrintDefaults()
 	}
 	flag.Parse()
@@ -186,5 +186,5 @@ func main() {
 		return
 	}
 	startBackgroundRecoveryScan(ctx, paths)
-	runLoop(ctx, c.Heartbeat, c.Poll, func(err error) { log.Print(err) }, 5*time.Second, 15*time.Second)
+	runLoop(ctx, c.Heartbeat, c.Poll, func(err error) { log.Print(err) }, 15*time.Second, 30*time.Second)
 }

@@ -53,10 +53,12 @@ type TrafficRef struct {
 }
 
 type HeartbeatAck struct {
-	Received         bool     `json:"received"`
-	ProtocolVerified bool     `json:"protocol_verified"`
-	Capabilities     []string `json:"heartbeat_capabilities,omitempty"`
-	TrafficHash      string   `json:"node_traffic_hash,omitempty"`
+	Received          bool     `json:"received"`
+	ProtocolVerified  bool     `json:"protocol_verified"`
+	Capabilities      []string `json:"heartbeat_capabilities,omitempty"`
+	TrafficHash       string   `json:"node_traffic_hash,omitempty"`
+	InstanceIDs       []string `json:"instance_ids,omitempty"`
+	InstancesComplete bool     `json:"instances_complete,omitempty"`
 }
 
 func TrafficHash(samples []traffic.Sample) string {

@@ -30,24 +30,26 @@ func Command(name string) error {
 		}
 	}()
 	switch name {
+	case "doctor", "check":
+		return m.doctor()
 	case "config":
-		return m.action("16")
+		return m.configureConfigYML()
 	case "status":
-		return m.action("1")
+		return m.action("2")
 	case "log":
-		return m.action("8")
+		return m.action("3")
 	case "singbox-log":
-		return m.action("12")
+		return m.action("4")
 	case "singbox-restart":
-		return m.action("11")
+		return m.restartSingboxInstance()
 	case "bbr":
-		return m.action("9")
+		return m.bbr()
 	case "unbind":
-		return m.action("15")
+		return m.unbindPanel()
 	case "start", "stop", "restart", "enable", "disable":
 		return m.controlAgent(name)
 	default:
-		return errors.New("可用命令：menu、config、status、log、singbox-log、singbox-restart、start、stop、restart、enable、disable、bbr、unbind")
+		return errors.New("可用命令：menu、doctor、config、status、log、singbox-log、singbox-restart、start、stop、restart、enable、disable、bbr、unbind")
 	}
 }
 

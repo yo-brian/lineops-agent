@@ -47,7 +47,7 @@ func Run() error {
 	}()
 	for {
 		m.printHeader()
-		fmt.Println("── 快速配置与状态 ──\n16. 配置面板通信 (config.yml：网址 / API Key / 节点 ID)\n1. 查看本机服务状态\n8. 查看 Agent 实时日志\n12. 查看 sing-box 日志\n2. 查看本机实例与节点\n7. 检查服务器实际状态\n10. 查看任务结果\n── 节点与服务管理 ──\n3. 新增节点\n4. 编辑节点\n5. 删除指定节点\n6. 发布面板当前配置\n11. 重启 sing-box 实例\n13. Agent 服务管理（启动／停止／重启／自启）\n── 系统维护 ──\n9. BBR 加速设置\n14. 安装、升级与卸载说明\n15. 解除面板绑定（保留节点）\n0. 退出")
+		fmt.Println("── 状态与诊断 ──\n1. 一键全面自检 (配置 / 面板通信 / 服务 / 节点协议握手)\n2. 查看本机服务与实例状态\n3. 查看 Agent 实时日志\n4. 查看 sing-box 实时日志\n── 配置与服务控制 ──\n5. 配置面板通信 (config.yml: 网址 / API Key / VPS ID)\n6. Agent 服务管理 (启动 / 停止 / 重启 / 开机自启)\n7. 重启或重新同步 sing-box 实例\n── 系统与维护 ──\n8. BBR 加速设置\n9. 升级、解绑与卸载维护\n0. 退出")
 		choice, err := m.read("请选择", "")
 		if err != nil {
 			return err
@@ -215,73 +215,196 @@ func (m *menu) submit(method, path string, v object) error {
 	fmt.Println("请求已受理，不代表服务器已生效。请使用“查看任务结果”确认；未知结果不要强制改为成功。")
 	return nil
 }
-func (m *menu) action(choice string) error {
+func (m *menu) recoveryBin() string {
+	for _, candidate := range []string{
+		m.paths.RecoveryBinary(),
+		filepath.Join(m.paths.AgentBinDir, "lineops-agent"),
+		"/etc/lineops/bin/lineops-agent",
+		"/usr/local/bin/lineops-agent",
+	} {
+		if candidate != "" {
+			if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
+				return candidate
+			}
+		}
+	}
+	if exe, err := os.Executable(); err == nil && exe != "" {
+		return exe
+	}
+	return m.paths.RecoveryBinary()
+}
+
+func (m *menu) localInstances() []string {
+	entries, e := os.ReadDir(m.paths.InstancesDir)
+	if e != nil {
+		return nil
+	}
+	var ids []string
+	for _, entry := range entries {
+		if entry.IsDir() && uuid.MatchString(entry.Name()) {
+			ids = append(ids, entry.Name())
+		}
+	}
+	return ids
+}
+
+func (m *menu) doctor() error {
+	fmt.Println("\n── 开始执行 LineOps 一键全面自检 ──")
+	failures := 0
+	if err := m.loadConfig(); err != nil {
+		fmt.Printf("[1/5] 配置文件 (%s): [✗] 异常 (%s)\n", agentconfig.DefaultFile, clean(err.Error()))
+		failures++
+	} else if m.cfg == nil {
+		fmt.Printf("[1/5] 配置文件 (%s): [✗] 未找到配置文件（可在菜单按 5 配置）\n", agentconfig.DefaultFile)
+		failures++
+	} else {
+		bind := m.cfg.Binding.VPSID
+		if bind == "" {
+			bind = m.cfg.Binding.NodeID
+		}
+		fmt.Printf("[1/5] 配置文件 (%s): [✓] 正常 (面板=%s, 绑定=%s)\n", agentconfig.DefaultFile, clean(m.cfg.Panel.URL), clean(bind))
+	}
+
+	idFile := filepath.Join(m.paths.AgentStateDir, "identity.json")
+	if b, err := protectedRead(idFile); err != nil {
+		fmt.Printf("[2/5] Agent 身份凭据 (%s): [✗] 未找到或权限异常 (%s)\n", idFile, clean(err.Error()))
+		failures++
+	} else {
+		var id struct {
+			Token   string `json:"identity_token"`
+			AgentID string `json:"agent_id"`
+			VPSID   string `json:"vps_id"`
+		}
+		if json.Unmarshal(b, &id) != nil || len(id.Token) != 43 || !uuid.MatchString(id.AgentID) || !uuid.MatchString(id.VPSID) {
+			fmt.Printf("[2/5] Agent 身份凭据: [✗] 凭据内容格式无效\n")
+			failures++
+		} else if m.cfg != nil && m.cfg.CheckIdentity(id.VPSID) != nil {
+			fmt.Printf("[2/5] Agent 身份凭据: [✗] 凭据 VPS ID (%s) 与 config.yml 绑定不一致\n", clean(id.VPSID))
+			failures++
+		} else {
+			fmt.Printf("[2/5] Agent 身份凭据: [✓] 正常 (AgentID=%s, VPSID=%s)\n", clean(id.AgentID), clean(id.VPSID))
+		}
+	}
+
+	if err := m.connect(); err != nil {
+		fmt.Printf("[3/5] 面板 HTTPS 通信与鉴权: [✗] 无法建立连接 (%s)\n", clean(err.Error()))
+		failures++
+	} else {
+		var list object
+		if err := m.panel.call("GET", "/groups?page=1&page_size=1", nil, &list); err != nil {
+			fmt.Printf("[3/5] 面板 HTTPS 通信与鉴权: [✗] 面板请求失败 (%s)\n", clean(err.Error()))
+			failures++
+		} else {
+			fmt.Printf("[3/5] 面板 HTTPS 通信与鉴权: [✓] 正常 (HTTPS 握手与 Bearer 凭据验证通过)\n")
+		}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	activeOut, activeErr := exec.CommandContext(ctx, "systemctl", "is-active", "lineops-agent.service").Output()
+	enabledOut, _ := exec.CommandContext(ctx, "systemctl", "is-enabled", "lineops-agent.service").Output()
+	cancel()
+	activeState := strings.TrimSpace(string(activeOut))
+	enabledState := strings.TrimSpace(string(enabledOut))
+	if activeErr != nil || activeState != "active" {
+		fmt.Printf("[4/5] Agent 系统服务 (lineops-agent.service): [✗] 未运行 (状态=%s, 自启=%s)\n", clean(activeState), clean(enabledState))
+		failures++
+	} else {
+		fmt.Printf("[4/5] Agent 系统服务 (lineops-agent.service): [✓] 运行中 (状态=%s, 自启=%s)\n", clean(activeState), clean(enabledState))
+	}
+
+	ids := m.localInstances()
+	if len(ids) == 0 {
+		fmt.Printf("[5/5] sing-box 实例与协议探针: [!] 本机尚无已安装的 sing-box 实例 (%s)\n", m.paths.InstancesDir)
+	} else {
+		bin := m.recoveryBin()
+		for _, id := range ids {
+			unit := "lineops-sing-box-" + id + ".service"
+			sctx, scancel := context.WithTimeout(context.Background(), 5*time.Second)
+			sOut, sErr := exec.CommandContext(sctx, "systemctl", "is-active", unit).Output()
+			scancel()
+			sState := strings.TrimSpace(string(sOut))
+			if sErr != nil || sState != "active" {
+				fmt.Printf("[5/5] sing-box 实例 (%s): [✗] 服务未运行 (%s=%s)\n", id, unit, clean(sState))
+				failures++
+				continue
+			}
+			vctx, vcancel := context.WithTimeout(context.Background(), 30*time.Second)
+			vOut, vErr := exec.CommandContext(vctx, bin, "verify", "--root", m.paths.InstancesDir, "--instance", id).CombinedOutput()
+			vcancel()
+			if vErr != nil {
+				fmt.Printf("[5/5] sing-box 实例 (%s): [✗] 协议或配置核实未通过 (%s: %s)\n", id, clean(vErr.Error()), clean(strings.TrimSpace(string(vOut))))
+				failures++
+			} else {
+				fmt.Printf("[5/5] sing-box 实例 (%s): [✓] 服务运行中，配置签名与节点协议握手全部通过\n", id)
+			}
+		}
+	}
+
+	if failures == 0 {
+		fmt.Println("================ 自检完成：全部核心功能正常 ================")
+		return nil
+	}
+	fmt.Printf("================ 自检完成：发现 %d 项异常，请按上方提示处理 ================\n", failures)
+	return nil
+}
+
+func (m *menu) restartSingboxInstance() error {
 	if e := m.loadConfig(); e != nil {
 		return e
 	}
+	id, err := m.instance()
+	if err != nil {
+		return err
+	}
+	if err := m.connect(); err != nil {
+		if m.confirm("面板暂不可达，是否直接通过本机 systemd 重启 lineops-sing-box-" + id + ".service") {
+			return run("systemctl", "restart", "lineops-sing-box-"+id+".service")
+		}
+		return err
+	}
+	impact, err := m.impact(id)
+	if err != nil {
+		return err
+	}
+	showImpact(impact)
+	if !m.confirm("重启此实例：该实例下所有专线组的节点连接都会短暂中断；保留当前配置") {
+		return nil
+	}
+	return m.submit("POST", "/instances/"+id+"/restart", object{"version": impact["version"]})
+}
+
+func (m *menu) singboxMenu() error {
+	choice, err := m.read("1 重启 sing-box 实例 / 2 重新发布面板当前配置 / 3 校验本机协议并同步未知发布结果 / 0 返回", "0")
+	if err != nil || choice == "0" || choice == "" {
+		return err
+	}
 	switch choice {
 	case "1":
-		return run("systemctl", "status", "lineops-agent", "lineops-sing-box-*", "--no-pager", "-l")
-	case "8":
-		return run("journalctl", "-u", "lineops-agent", "--since", "30 minutes ago", "-n", "100", "--no-pager")
-	case "9":
-		return m.bbr()
-	case "12":
-		id, err := m.instance()
-		if err != nil {
-			return err
+		return m.restartSingboxInstance()
+	case "2":
+		if e := m.connect(); e != nil {
+			return e
 		}
-		return run("journalctl", "-u", "lineops-sing-box-"+id+".service", "--since", "30 minutes ago", "-n", "100", "--no-pager")
-	case "13":
-		return m.agentService()
-	case "15":
-		return m.unbindPanel()
-	case "16", "config":
-		return m.configureConfigYML()
-	case "14":
-		fmt.Println("── 统一目录规范 (/etc/lineops) ──")
-		fmt.Println("  配置文件: /etc/lineops/config.yml")
-		fmt.Println("  程序目录: /etc/lineops/bin (lineops-agent, lineops-singbox)")
-		fmt.Println("  节点实例: /etc/lineops/instances/<instance_id>/config.json")
-		fmt.Println("  运行内核: /etc/lineops/sing-box")
-		fmt.Println("  状态目录: /etc/lineops/state/agent, /etc/lineops/state/lifecycle")
-		fmt.Println("── 从 GitHub 拉取安装 / 升级 ──")
-		fmt.Println("  升级或迁移命令: curl -fsSL https://github.com/yo-brian/lineops-agent/releases/latest/download/install.sh | sudo bash -s -- --upgrade")
-		fmt.Println("  强制清理重装:   curl -fsSL https://github.com/yo-brian/lineops-agent/releases/latest/download/install.sh | sudo bash -s -- --clean")
-		return nil
-	case "2", "3", "4", "5", "6", "7", "10", "11":
-	default:
-		return errors.New("请选择菜单中的序号")
-	}
-	if choice == "2" {
 		id, e := m.instance()
 		if e != nil {
 			return e
 		}
-		fmt.Println("本机保存的最近状态（不代表刚刚通过健康检查）：")
-		if e = run(m.paths.RecoveryBinary(), "status", "--root", m.paths.InstancesDir, "--instance", id); e != nil {
+		impact, e := m.impact(id)
+		if e != nil {
 			return e
 		}
-		if !m.confirm("是否连接面板查看该实例节点列表") {
+		showImpact(impact)
+		if !m.confirm("按面板当前配置发布整个实例；会保留其他有效节点，可能短暂影响共享实例连接") {
 			return nil
 		}
-		if e = m.connect(); e != nil {
-			return e
-		}
-		v, e := m.impact(id)
-		if e != nil {
-			return e
-		}
-		showImpact(v)
-		return nil
-	}
-	if choice == "7" {
+		return m.submit("POST", "/instances/"+id+"/publish", object{"version": impact["version"]})
+	case "3":
 		id, e := m.instance()
 		if e != nil {
 			return e
 		}
-		fmt.Println("检查文件、授权和实际协议健康，不修改配置。配置被手动修改时会拒绝核实；此菜单不会绕过校验。")
-		if e = run(m.paths.RecoveryBinary(), "verify", "--root", m.paths.InstancesDir, "--instance", id); e != nil {
+		fmt.Println("检查文件、授权和实际协议健康，不修改配置。")
+		if e = run(m.recoveryBin(), "verify", "--root", m.paths.InstancesDir, "--instance", id); e != nil {
 			return fmt.Errorf("本机核实未通过，请保留日志并检查配置差异：%w", e)
 		}
 		if !m.confirm("本机检查通过，是否通知面板核实未知发布结果") {
@@ -295,48 +418,104 @@ func (m *menu) action(choice string) error {
 			return e
 		}
 		return m.submit("POST", "/instances/"+id+"/reconcile", object{"version": v["version"]})
+	default:
+		return errors.New("请选择有效的操作序号")
 	}
-	if e := m.connect(); e != nil {
+}
+
+func (m *menu) printInstallGuide() {
+	fmt.Println("── 统一目录规范 (/etc/lineops) ──")
+	fmt.Println("  配置文件: /etc/lineops/config.yml")
+	fmt.Println("  程序目录: /etc/lineops/bin/lineops-agent (单二进制集成)")
+	fmt.Println("  节点实例: /etc/lineops/instances/<instance_id>/config.json")
+	fmt.Println("  运行内核: /etc/lineops/sing-box")
+	fmt.Println("  状态目录: /etc/lineops/state/agent, /etc/lineops/state/lifecycle")
+	fmt.Println("── 从 GitHub 拉取安装 / 升级 ──")
+	fmt.Println("  升级或迁移命令: curl -fsSL https://github.com/yo-brian/lineops-agent/releases/latest/download/install.sh | sudo bash -s -- --upgrade")
+	fmt.Println("  强制清理重装:   curl -fsSL https://github.com/yo-brian/lineops-agent/releases/latest/download/install.sh | sudo bash -s -- --clean")
+}
+
+func (m *menu) maintainMenu() error {
+	choice, err := m.read("1 查看目录规范与升级/重装命令 / 2 解除面板绑定（保留节点） / 0 返回", "0")
+	if err != nil || choice == "0" || choice == "" {
+		return err
+	}
+	switch choice {
+	case "1":
+		m.printInstallGuide()
+		return nil
+	case "2":
+		return m.unbindPanel()
+	default:
+		return errors.New("请选择有效的操作序号")
+	}
+}
+
+func (m *menu) action(choice string) error {
+	if e := m.loadConfig(); e != nil && choice != "5" && choice != "16" && choice != "config" && choice != "1" && choice != "doctor" {
 		return e
 	}
-	if choice == "10" {
-		id := m.ask("任务 ID", "")
-		if !uuid.MatchString(id) {
-			return errors.New("任务 ID 无效")
+	switch choice {
+	case "1", "doctor":
+		return m.doctor()
+	case "2", "status":
+		_ = run("systemctl", "status", "lineops-agent", "lineops-sing-box-*", "--no-pager", "-l")
+		ids := m.localInstances()
+		if len(ids) == 0 {
+			return nil
 		}
-		var v object
-		if e := m.panel.call("GET", "/tasks/"+id, nil, &v); e != nil {
+		id := ids[0]
+		if len(ids) > 1 {
+			var err error
+			id, err = m.instance()
+			if err != nil {
+				return err
+			}
+		}
+		fmt.Printf("\n── 实例 %s 本机保存状态 ──\n", id)
+		if e := run(m.recoveryBin(), "status", "--root", m.paths.InstancesDir, "--instance", id); e != nil {
 			return e
 		}
-		showTask(v)
+		if !m.confirm("是否连接面板查看该实例节点列表") {
+			return nil
+		}
+		if e := m.connect(); e != nil {
+			return e
+		}
+		v, e := m.impact(id)
+		if e != nil {
+			return e
+		}
+		showImpact(v)
 		return nil
-	}
-	id, e := m.instance()
-	if e != nil {
-		return e
-	}
-	impact, e := m.impact(id)
-	if e != nil {
-		return e
-	}
-	if choice == "11" {
-		showImpact(impact)
-		if !m.confirm("重启此实例：该实例下所有专线组的节点连接都会短暂中断；保留当前配置") {
-			return nil
+	case "3", "log":
+		return run("journalctl", "-u", "lineops-agent", "--since", "30 minutes ago", "-n", "100", "--no-pager")
+	case "4", "singbox-log":
+		id, err := m.instance()
+		if err != nil {
+			return err
 		}
-		return m.submit("POST", "/instances/"+id+"/restart", object{"version": impact["version"]})
+		return run("journalctl", "-u", "lineops-sing-box-"+id+".service", "--since", "30 minutes ago", "-n", "100", "--no-pager")
+	case "5", "16", "config":
+		return m.configureConfigYML()
+	case "6":
+		return m.agentService()
+	case "7":
+		return m.singboxMenu()
+	case "8":
+		return m.bbr()
+	case "9":
+		return m.maintainMenu()
+	case "11", "singbox-restart":
+		return m.restartSingboxInstance()
+	case "14":
+		m.printInstallGuide()
+		return nil
+	case "15", "unbind":
+		return m.unbindPanel()
+	default:
+		return errors.New("请选择菜单中的序号 (0-9)")
 	}
-	if choice == "6" {
-		showImpact(impact)
-		if !m.confirm("按面板当前配置发布整个实例；会保留其他有效节点，可能短暂影响共享实例连接") {
-			return nil
-		}
-		return m.submit("POST", "/instances/"+id+"/publish", object{"version": impact["version"]})
-	}
-	if choice == "3" {
-		return m.create(id, impact)
-	}
-	return m.change(id, impact, choice == "5")
 }
 
 func (m *menu) change(instance string, impact object, deleting bool) error {

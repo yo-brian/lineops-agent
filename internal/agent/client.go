@@ -33,6 +33,8 @@ type Client struct {
 	Executor                      *agentbridge.Client
 	heartbeatGzip, heartbeatDelta bool
 	acknowledgedTraffic           []traffic.Sample
+	cachedInstanceIDs             []string
+	cachedInstancesValid          bool
 }
 type identity struct {
 	Token   string `json:"identity_token"`
@@ -343,6 +345,10 @@ func (c *Client) Heartbeat(ctx context.Context) error {
 // New panels advertise partial observations alongside cursor pagination. Older
 // panels still yield one bounded page and receive the unchanged full heartbeat.
 func (c *Client) visitInstancePages(ctx context.Context, visit func([]string, bool) error) error {
+	if c.cachedInstancesValid {
+		ids := append([]string(nil), c.cachedInstanceIDs...)
+		return visit(ids, true)
+	}
 	after := ""
 	for {
 		path := "/instances"
@@ -524,6 +530,7 @@ func (c *Client) ResumeRotation(ctx context.Context) error {
 	return c.removeState("rotation-pending.json")
 }
 func (c *Client) submitReceipt(ctx context.Context, name string, result receipt) error {
+	c.cachedInstancesValid = false
 	status, err := c.request(ctx, "POST", "/results", result, nil)
 	if err == nil {
 		return c.removeState(name)

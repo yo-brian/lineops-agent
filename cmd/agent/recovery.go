@@ -54,24 +54,34 @@ func runRecovery(args []string) error {
 		return errors.New("unexpected arguments")
 	}
 	var paths agentconfig.Paths
+	configExplicit := false
 	rootExplicit := false
 	f.Visit(func(fl *flag.Flag) {
+		if fl.Name == "config" {
+			configExplicit = true
+		}
 		if fl.Name == "root" {
 			rootExplicit = true
 		}
 	})
-	if *configFile == "" && !rootExplicit {
-		if _, e := os.Stat(agentconfig.DefaultFile); e == nil {
-			*configFile = agentconfig.DefaultFile
+	if args[0] != "trial" && args[0] != "probe" {
+		if *configFile == "" && !rootExplicit {
+			if _, e := os.Stat(agentconfig.DefaultFile); e == nil {
+				*configFile = agentconfig.DefaultFile
+			}
 		}
-	}
-	if *configFile != "" {
-		c, e := agentconfig.Load(*configFile)
-		if e != nil {
-			return e
+		if *configFile != "" {
+			c, e := agentconfig.Load(*configFile)
+			if e != nil {
+				if configExplicit {
+					return e
+				}
+				paths = agentconfig.NewPaths()
+			} else {
+				paths = c.Paths
+				*root = paths.InstancesDir
+			}
 		}
-		paths = c.Paths
-		*root = paths.InstancesDir
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()

@@ -176,6 +176,10 @@ func (e Engine) installSingbox(ctx context.Context, r LifecycleRequest, result *
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return errors.New("instance_already_registered")
 	}
+	for _, u := range []string{"lineops-sing-box-" + r.InstanceID + ".service", "lineops-policy-" + r.InstanceID + ".timer", "lineops-policy-" + r.InstanceID + ".service"} {
+		_ = command(ctx, "/usr/bin/systemctl", "disable", "--now", u)
+		_ = os.Remove(filepath.Join("/etc/systemd/system", u))
+	}
 	base := filepath.Join(e.ManagedPaths().SingboxDir, r.InstanceID)
 	if err := safeDir(base, true); err != nil {
 		return errors.New("singbox_directory_unsafe")

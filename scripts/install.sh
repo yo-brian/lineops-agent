@@ -163,12 +163,12 @@ done
 if [[ -z "$BIN_SRC" ]]; then
   TMP_BIN="$TMP_DIR/lineops-agent-linux-$ARCH"
   echo "Downloading lineops-agent-linux-$ARCH from $RELEASE_URL ..."
-  if ! curl --fail --location --show-error --connect-timeout 15 --max-time 600 --retry 2 \
+  if ! curl --fail --location --show-error --connect-timeout 15 --max-time 600 --retry 4 --retry-delay 2 \
     "$RELEASE_URL/lineops-agent-linux-$ARCH" -o "$TMP_BIN"; then
     echo "Error: Failed to download lineops-agent-linux-$ARCH from $RELEASE_URL" >&2
     exit 1
   fi
-  if curl --fail --silent --location --connect-timeout 10 --max-time 30 \
+  if curl --fail --silent --location --connect-timeout 10 --max-time 30 --retry 3 --retry-delay 2 \
     "$RELEASE_URL/SHA256SUMS" -o "$TMP_DIR/SHA256SUMS" 2>/dev/null; then
     expected_hash=$(awk -v f="lineops-agent-linux-$ARCH" '$2 == f || $2 == "*"f {print $1}' "$TMP_DIR/SHA256SUMS" | head -n 1)
     if [[ -n "$expected_hash" ]]; then

@@ -107,8 +107,11 @@ func Inventory() agentproto.Inventory {
 			break
 		}
 	}
-	i.AgentLogs = collectJournalTail("lineops-agent.service", 60)
 	return i
+}
+
+func CollectAgentLogs() []string {
+	return collectJournalTail("lineops-agent.service", 80)
 }
 
 // collectJournalTail reads bounded systemd journal lines.

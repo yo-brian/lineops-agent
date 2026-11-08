@@ -326,12 +326,6 @@ func (c *Client) Heartbeat(ctx context.Context) error {
 						}
 					}
 					page.Services = append(page.Services, observeManagedService(instanceID))
-					if logs := observeManagedServiceLogs(instanceID); len(logs) > 0 {
-						if page.SingboxLogs == nil {
-							page.SingboxLogs = map[string][]string{}
-						}
-						page.SingboxLogs[instanceID] = logs
-					}
 					probeCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
 					state, e := c.Executor.Status(probeCtx, instanceID)
 					cancel()
@@ -418,8 +412,12 @@ func (c *Client) Poll(ctx context.Context) error {
 	if err != nil || status == 204 {
 		return err
 	}
-	if (cmd.Kind != "inventory" && cmd.Kind != "release" && cmd.Kind != "release_reconcile" && cmd.Kind != "singbox_reconcile" && cmd.Kind != "install_singbox" && cmd.Kind != "uninstall_singbox" && cmd.Kind != "restart_singbox") || len(cmd.TaskID) != 36 || strings.ContainsAny(cmd.TaskID, "/\\.") || cmd.Fencing < 1 || time.Now().After(cmd.Deadline) {
+	if (cmd.Kind != "agent_logs" && cmd.Kind != "inventory" && cmd.Kind != "release" && cmd.Kind != "release_reconcile" && cmd.Kind != "singbox_reconcile" && cmd.Kind != "install_singbox" && cmd.Kind != "uninstall_singbox" && cmd.Kind != "restart_singbox") || len(cmd.TaskID) != 36 || strings.ContainsAny(cmd.TaskID, "/\\.") || cmd.Fencing < 1 || time.Now().After(cmd.Deadline) {
 		return errors.New("unsupported or expired command")
+	}
+	if cmd.Kind == "agent_logs" {
+		_, err := c.request(ctx, "POST", "/logs", map[string]any{"agent_logs": CollectAgentLogs()}, nil)
+		return err
 	}
 	if cmd.Kind == "singbox_reconcile" {
 		return c.executeLifecycleReconcile(ctx, cmd)

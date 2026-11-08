@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"lineops-agent/internal/agentconfig"
-	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -98,9 +97,6 @@ func run(name string, args ...string) error {
 func (m *menu) loadConfig() error {
 	m.paths = agentconfig.NewPaths()
 	if _, e := os.Stat(agentconfig.DefaultFile); os.IsNotExist(e) {
-		if _, legErr := os.Stat("/opt/lineops-agent"); legErr == nil {
-			m.paths = agentconfig.LegacyPaths()
-		}
 		return nil
 	} else if e != nil {
 		return e
@@ -117,29 +113,14 @@ func (m *menu) connect() error {
 	if e := m.loadConfig(); e != nil {
 		return e
 	}
-	settings := map[string]string{}
-	var b []byte
-	var e error
-	if m.cfg != nil {
-		settings["LINEOPS_PANEL"] = m.cfg.Panel.URL
-		settings["LINEOPS_CA_FILE"] = m.cfg.Panel.CAFile
-	} else {
-		b, e = protectedRead("/etc/lineops-agent/agent.env")
-		if e != nil {
-			return e
-		}
-		for _, line := range strings.Split(string(b), "\n") {
-			k, v, ok := strings.Cut(line, "=")
-			if ok {
-				settings[k] = strings.TrimSpace(v)
-			}
-		}
+	if m.cfg == nil {
+		return errors.New("未找到配置文件 /etc/lineops/config.yml")
 	}
-	p, e := newClient(settings["LINEOPS_PANEL"], settings["LINEOPS_CA_FILE"])
+	p, e := newClient(m.cfg.Panel.URL, m.cfg.Panel.CAFile)
 	if e != nil {
 		return e
 	}
-	b, e = protectedRead(filepath.Join(m.paths.AgentStateDir, "identity.json"))
+	b, e := protectedRead(filepath.Join(m.paths.AgentStateDir, "identity.json"))
 	if e != nil {
 		return e
 	}
@@ -515,191 +496,6 @@ func (m *menu) action(choice string) error {
 		return m.unbindPanel()
 	default:
 		return errors.New("请选择菜单中的序号 (0-9)")
-	}
-}
-
-func (m *menu) change(instance string, impact object, deleting bool) error {
-	var nodes []object
-	if items, ok := impact["nodes"].([]any); ok {
-		for _, item := range items {
-			if v, ok := item.(map[string]any); ok {
-				nodes = append(nodes, v)
-				fmt.Printf("%d. %s 端口 %v 状态 %s/%s\n", len(nodes), str(v["name"]), v["port"], str(v["desired_state"]), str(v["actual_state"]))
-			}
-		}
-	}
-	n, e := strconv.Atoi(m.ask("选择节点序号", ""))
-	if e != nil || n < 1 || n > len(nodes) {
-		return errors.New("节点选择无效")
-	}
-	node := nodes[n-1]
-	id := str(node["id"])
-	group := str(node["group_id"])
-	if !uuid.MatchString(id) || !uuid.MatchString(group) {
-		return errors.New("节点数据无效")
-	}
-	nodes, e = m.panel.nodes(group)
-	if e != nil {
-		return e
-	}
-	var current object
-	for _, v := range nodes {
-		if str(v["id"]) == id && str(v["instance_id"]) == instance {
-			current = v
-		}
-	}
-	if current == nil {
-		return errors.New("节点已变化，请刷新")
-	}
-	if str(current["desired_state"]) == "deleted" {
-		return errors.New("节点已进入删除流程，请检查任务结果或核实服务器状态；不能重复删除或强制清理")
-	}
-	if deleting {
-		if !m.confirm("删除节点 " + str(current["name"]) + "（" + id + "），其他节点保留；共享实例应用配置可能短暂影响连接") {
-			return nil
-		}
-		return m.submit("POST", "/nodes/"+id+"/state", object{"version": current["version"], "state": "deleted"})
-	}
-	v := object{"version": current["version"], "name": m.ask("节点名称", str(current["name"])), "access_address": m.ask("客户端接入域名或 IP", str(current["access_address"]))}
-	if m.confirm("是否同时编辑监听端口及传输参数") {
-		var detail struct {
-			Config  object  `json:"config"`
-			Version float64 `json:"version"`
-		}
-		if e = m.panel.call("GET", "/nodes/"+id+"/configuration", nil, &detail); e != nil {
-			return e
-		}
-		if detail.Version != current["version"] {
-			return errors.New("节点已变化，请重新选择")
-		}
-		config := detail.Config
-		if str(config["relay_source_node"]) != "" || str(config["relay_address"]) != "" {
-			return errors.New("中转节点请在面板编辑依赖关系")
-		}
-		port, e := strconv.Atoi(m.ask("监听端口", str(config["port"])))
-		if e != nil {
-			return e
-		}
-		config["port"] = port
-		config["listen"] = m.ask("监听 IP", str(config["listen"]))
-		if str(config["security"]) != "none" {
-			config["server_name"] = m.ask("TLS/Reality 服务器名", str(config["server_name"]))
-		}
-		if str(config["transport"]) == "ws" {
-			config["transport_path"] = m.ask("WebSocket 路径", str(config["transport_path"]))
-		}
-		if str(config["transport"]) == "grpc" {
-			config["grpc_service_name"] = m.ask("gRPC 服务名", str(config["grpc_service_name"]))
-		}
-		v["config"] = config
-	}
-	if !m.confirm("保存节点 " + str(v["name"]) + " 并同步策略") {
-		return nil
-	}
-	return m.submit("PUT", "/nodes/"+id, v)
-}
-
-func (m *menu) create(id string, impact object) error {
-	fmt.Println("新增直连节点，密钥由面板生成。请选择所属专线组：")
-	group, err := m.chooseGroup()
-	if err != nil {
-		return err
-	}
-	var dep object
-	if e := m.panel.call("GET", "/groups/"+group+"/deployment", nil, &dep); e != nil {
-		return e
-	}
-	name := m.ask("节点名称", "")
-	address := m.ask("客户端接入域名或 IP", "")
-	port, e := strconv.Atoi(m.ask("监听端口（1024–65535）", ""))
-	if e != nil {
-		return e
-	}
-	v := object{"version": dep["version"], "instance_id": id, "instance_version": impact["version"], "deploy": true, "name": name, "access_address": address, "listen": "0.0.0.0", "port": port, "transport": "tcp"}
-	protocolChoice := m.ask("协议：1 Shadowsocks / 2 VLESS Reality / 3 VLESS TLS / 4 Trojan TLS", "2")
-	switch protocolChoice {
-	case "1":
-		v["protocol"] = "shadowsocks"
-		v["security"] = "none"
-		v["method"] = m.ask("加密方式", "2022-blake3-aes-128-gcm")
-	case "2":
-		v["protocol"] = "vless"
-		v["security"] = "reality"
-		v["flow"] = "xtls-rprx-vision"
-		v["server_name"] = m.ask("Reality 服务器名", "")
-		v["reality_handshake"] = v["server_name"]
-		v["reality_handshake_port"] = 443
-	case "3", "4":
-		v["protocol"] = "vless"
-		if protocolChoice == "4" {
-			v["protocol"] = "trojan"
-		}
-		v["security"] = "tls"
-		v["server_name"] = m.ask("TLS 服务器名", address)
-		cert := m.ask("面板证书 ID", "")
-		if !uuid.MatchString(cert) {
-			return errors.New("证书 ID 无效")
-		}
-		v["certificate_id"] = cert
-	default:
-		return errors.New("协议选择无效")
-	}
-	show(v)
-	if !m.confirm("将节点保存到面板并发布整个实例；其他有效节点保留") {
-		return nil
-	}
-	return m.submit("POST", "/groups/"+group+"/nodes", v)
-}
-
-func (m *menu) chooseGroup() (string, error) {
-	query, e := m.read("搜索本 VPS 已关联的专线组（回车查看全部）", "")
-	if e != nil {
-		return "", e
-	}
-	page := 1
-	for {
-		var list struct {
-			Items []object `json:"items"`
-			Total int      `json:"total"`
-		}
-		path := fmt.Sprintf("/groups?page_size=20&page=%d&q=%s", page, url.QueryEscape(query))
-		if e = m.panel.call("GET", path, nil, &list); e != nil {
-			return "", e
-		}
-		for i, v := range list.Items {
-			fmt.Printf("%d. %s\n", i+1, str(v["name"]))
-		}
-		fmt.Printf("第 %d 页，共 %d 个专线组\n", page, list.Total)
-		choice, e := m.read("序号 / n 下一页 / p 上一页 / 0 取消（也可粘贴专线组 ID）", "")
-		if e != nil {
-			return "", e
-		}
-		if choice == "0" {
-			return "", errors.New("已取消")
-		}
-		if choice == "n" {
-			if page*20 < list.Total {
-				page++
-			}
-			continue
-		}
-		if choice == "p" {
-			if page > 1 {
-				page--
-			}
-			continue
-		}
-		if uuid.MatchString(choice) {
-			return choice, nil
-		}
-		n, e := strconv.Atoi(choice)
-		if e == nil && n > 0 && n <= len(list.Items) {
-			id := str(list.Items[n-1]["id"])
-			if uuid.MatchString(id) {
-				return id, nil
-			}
-		}
-		fmt.Println("请选择有效的专线组。")
 	}
 }
 

@@ -5,25 +5,10 @@ import (
 	"testing"
 )
 
-func TestDecodeDefaultsAndLegacyOverrides(t *testing.T) {
+func TestDecodeDefaults(t *testing.T) {
 	c, e := Decode(strings.NewReader("schema_version: 1\npanel:\n  url: https://panel.example.com\n"))
 	if e != nil || c.Paths != NewPaths() {
 		t.Fatalf("defaults: %#v %v", c, e)
-	}
-	data := `schema_version: 1
-panel:
-  url: https://panel.example.com
-paths:
-  agent_bin_dir: /opt/lineops-agent
-  agent_state_dir: /var/lib/lineops-agent
-  instances_dir: /var/lib/lineops/instances
-  singbox_dir: /opt/lineops-singbox
-  upgrades_dir: /var/lib/lineops-agent-upgrades
-  lifecycle_dir: /var/lib/lineops/lifecycle
-`
-	c, e = Decode(strings.NewReader(data))
-	if e != nil || c.Paths != LegacyPaths() {
-		t.Fatalf("legacy: %#v %v", c, e)
 	}
 }
 func TestDecodeRejectsAmbiguousOrUnsafeConfiguration(t *testing.T) {
@@ -64,8 +49,8 @@ func TestIdentityAndCustomPaths(t *testing.T) {
 	if ForRoot(NewPaths().InstancesDir).RecoveryBinary() != "/etc/lineops/bin/lineops-recovery" {
 		t.Fatal("new recovery path")
 	}
-	if ForRoot(LegacyPaths().InstancesDir) != LegacyPaths() {
-		t.Fatal("legacy path regression")
+	if ForRoot("") != NewPaths() {
+		t.Fatal("default ForRoot path regression")
 	}
 	direct, e := Decode(strings.NewReader("schema_version: 1\npanel:\n  url: https://panel.example.com\n  api_key: secret-api-key-123\nbinding:\n  node_id: 33333333-3333-4333-8333-333333333333\n"))
 	if e != nil || direct.Credential() != "secret-api-key-123" || !direct.HasStaticCredential() || direct.Binding.NodeID != "33333333-3333-4333-8333-333333333333" {

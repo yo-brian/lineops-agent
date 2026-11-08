@@ -25,15 +25,12 @@ func (m *menu) unbindPanel() error {
 	if err := m.loadConfig(); err != nil {
 		return err
 	}
-	configDir := "/etc/lineops-agent"
-	if m.cfg != nil {
-		configDir = "/etc/lineops"
-		for _, dir := range []string{configDir, m.paths.AgentStateDir} {
-			if info, e := os.Lstat(dir); e == nil && info.IsDir() && info.Mode()&os.ModeSymlink == 0 {
-				marker := filepath.Join(dir, ".lineops-owned")
-				if _, me := os.Lstat(marker); errors.Is(me, os.ErrNotExist) {
-					_ = os.WriteFile(marker, []byte("lineops-agent-v1\n"), 0400)
-				}
+	configDir := "/etc/lineops"
+	for _, dir := range []string{configDir, m.paths.AgentStateDir} {
+		if info, e := os.Lstat(dir); e == nil && info.IsDir() && info.Mode()&os.ModeSymlink == 0 {
+			marker := filepath.Join(dir, ".lineops-owned")
+			if _, me := os.Lstat(marker); errors.Is(me, os.ErrNotExist) {
+				_ = os.WriteFile(marker, []byte("lineops-agent-v1\n"), 0400)
 			}
 		}
 	}
@@ -84,7 +81,7 @@ func clearPanelBinding(stateDir, configDir string, systemctl func(...string) (st
 		}
 		stateFiles = append(stateFiles, entry.Name())
 	}
-	configFiles := []string{"agent.env", "agent.env.new", "ca.pem", "config.yml", "config.yml.tmp"}
+	configFiles := []string{"ca.pem", "config.yml", "config.yml.tmp"}
 	for _, name := range configFiles {
 		if err := bindingFile(config, name); err != nil {
 			return err

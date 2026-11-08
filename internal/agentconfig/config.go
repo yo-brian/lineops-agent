@@ -55,18 +55,12 @@ type Config struct {
 func NewPaths() Paths {
 	return Paths{"/etc/lineops/bin", "/etc/lineops/state/agent", "/etc/lineops/instances", "/etc/lineops/sing-box", "/etc/lineops/backups/agent-upgrades", "/etc/lineops/state/lifecycle", "/run/lineops-executor/executor.sock"}
 }
-func LegacyPaths() Paths {
-	return Paths{"/opt/lineops-agent", "/var/lib/lineops-agent", "/var/lib/lineops/instances", "/opt/lineops-singbox", "/var/lib/lineops-agent-upgrades", "/var/lib/lineops/lifecycle", "/run/lineops-executor/executor.sock"}
-}
 
-// ForRoot preserves explicit old --root invocations and existing registrations.
+// ForRoot returns managed paths rooted at the given instances directory.
 func ForRoot(root string) Paths {
-	p := LegacyPaths()
-	if root == NewPaths().InstancesDir {
-		p = NewPaths()
-	}
-	p.InstancesDir = root
-	if root != NewPaths().InstancesDir {
+	p := NewPaths()
+	if root != "" && root != p.InstancesDir {
+		p.InstancesDir = root
 		p.LifecycleDir = path.Join(path.Dir(root), "lifecycle")
 	}
 	return p

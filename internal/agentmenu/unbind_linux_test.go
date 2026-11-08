@@ -29,7 +29,7 @@ func unbindFixture(t *testing.T) (string, string, string) {
 			t.Fatal(err)
 		}
 	}
-	for _, name := range []string{"agent.env", "agent.env.new", "ca.pem"} {
+	for _, name := range []string{"config.yml", "config.yml.tmp", "ca.pem"} {
 		if err := os.WriteFile(filepath.Join(config, name), []byte("old-panel-config"), 0600); err != nil {
 			t.Fatal(err)
 		}
@@ -78,7 +78,7 @@ func TestUnbindPreservesNodesAndClearsShutdownWrites(t *testing.T) {
 	if err != nil || len(entries) != 1 || entries[0].Name() != ".lineops-owned" {
 		t.Fatalf("binding state remains: %v, %v", entries, err)
 	}
-	for _, name := range []string{"agent.env", "agent.env.new", "ca.pem"} {
+	for _, name := range []string{"config.yml", "config.yml.tmp", "ca.pem"} {
 		if _, err := os.Lstat(filepath.Join(config, name)); !errors.Is(err, os.ErrNotExist) {
 			t.Fatalf("config remains: %s, %v", name, err)
 		}
@@ -121,7 +121,7 @@ func TestUnbindRetainsCredentialsUntilAgentStopped(t *testing.T) {
 			if err := clearPanelBinding(state, config, control); err == nil {
 				t.Fatal("unconfirmed stop accepted")
 			}
-			for _, path := range []string{filepath.Join(state, "identity.json"), filepath.Join(config, "agent.env")} {
+			for _, path := range []string{filepath.Join(state, "identity.json"), filepath.Join(config, "config.yml")} {
 				if _, err := os.Stat(path); err != nil {
 					t.Fatalf("credentials deleted before stop: %v", err)
 				}
@@ -139,7 +139,7 @@ func TestUnbindRejectsUnsafeTargetsBeforeServiceChanges(t *testing.T) {
 			case "directory":
 				err = os.Mkdir(filepath.Join(state, "unexpected-dir"), 0700)
 			case "symlink-file":
-				err = os.Symlink(filepath.Join(config, "agent.env"), filepath.Join(state, "outside-link"))
+				err = os.Symlink(filepath.Join(config, "config.yml"), filepath.Join(state, "outside-link"))
 			case "symlink-root":
 				link := filepath.Join(root, "state-link")
 				err = os.Symlink(state, link)
@@ -157,7 +157,7 @@ func TestUnbindRejectsUnsafeTargetsBeforeServiceChanges(t *testing.T) {
 			}); err == nil || called {
 				t.Fatalf("unsafe target touched service: %v, %t", err, called)
 			}
-			if _, err := os.Stat(filepath.Join(config, "agent.env")); err != nil {
+			if _, err := os.Stat(filepath.Join(config, "config.yml")); err != nil {
 				t.Fatal("unsafe preflight changed config")
 			}
 		})

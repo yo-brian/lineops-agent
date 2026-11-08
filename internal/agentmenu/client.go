@@ -107,31 +107,6 @@ func (p *panelClient) call(method, path string, body any, out any) error {
 	return nil
 }
 
-func (p *panelClient) nodes(group string) ([]object, error) {
-	var items []object
-	for page := 1; page <= 100000; page++ {
-		var result struct {
-			Items []object `json:"items"`
-			Total *int     `json:"total"`
-		}
-		path := fmt.Sprintf("/groups/%s/nodes?page=%d&page_size=100", group, page)
-		if err := p.call("GET", path, nil, &result); err != nil {
-			return nil, err
-		}
-		if len(result.Items) > 100 {
-			return nil, errors.New("节点分页响应超出范围")
-		}
-		items = append(items, result.Items...)
-		if result.Total == nil || page*100 >= *result.Total {
-			return items, nil
-		}
-		if len(result.Items) == 0 {
-			return nil, errors.New("节点列表已变化，请刷新后重新选择")
-		}
-	}
-	return nil, errors.New("节点分页超出范围，请在面板缩小范围")
-}
-
 func clean(s string) string {
 	return strings.Map(func(r rune) rune {
 		if r < 32 || r == 127 {

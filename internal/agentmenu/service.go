@@ -9,10 +9,8 @@ import (
 	"lineops-agent/internal/agentconfig"
 	"os"
 	"os/exec"
-	"os/user"
 	"path/filepath"
 	"runtime"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -122,18 +120,12 @@ func (m *menu) configureConfigYML() error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(agentconfig.DefaultFile), 0750); err != nil {
+	if err := os.MkdirAll(filepath.Dir(agentconfig.DefaultFile), 0755); err != nil {
 		return err
 	}
 	tmp := agentconfig.DefaultFile + ".tmp"
-	if err := os.WriteFile(tmp, data, 0640); err != nil {
+	if err := os.WriteFile(tmp, data, 0600); err != nil {
 		return err
-	}
-	if u, e := user.Lookup("lineops-agent"); e == nil {
-		if gid, e := strconv.Atoi(u.Gid); e == nil {
-			_ = os.Chown(filepath.Dir(agentconfig.DefaultFile), 0, gid)
-			_ = os.Chown(tmp, 0, gid)
-		}
 	}
 	if err := os.Rename(tmp, agentconfig.DefaultFile); err != nil {
 		_ = os.Remove(tmp)

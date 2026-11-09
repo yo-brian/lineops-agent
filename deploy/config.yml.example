@@ -1,6 +1,5 @@
-# LineOps 配置格式 v1（需要包含 config.yml 支持的新版 Agent）
-# 新安装保存到 /etc/lineops/config.yml，由 root:lineops-agent 持有，权限 0640。
-# Agent 可读取配置，但不能修改路径或绑定；接入密钥不保存在本文件。
+# LineOps 配置格式 v1
+# 保存到 /etc/lineops/config.yml，由 root:root 持有，权限 0600。
 # 不要把含真实凭据的文件提交到代码仓库或发给他人。
 schema_version: 1
 
@@ -50,20 +49,6 @@ paths:
   lifecycle_dir: "/etc/lineops/state/lifecycle"
   # 运行时 socket 放在 /run，重启后自动重建，不作为持久数据保存。
   executor_socket: "/run/lineops-executor/executor.sock"
-
-# 兼容旧版安装：将上面的 paths 整段替换为以下内容，保留实际旧文件。
-# paths:
-#   agent_bin_dir: "/opt/lineops-agent"
-#   agent_state_dir: "/var/lib/lineops-agent"
-#   instances_dir: "/var/lib/lineops/instances"
-#   singbox_dir: "/opt/lineops-singbox"
-#   upgrades_dir: "/var/lib/lineops-agent-upgrades"
-#   lifecycle_dir: "/var/lib/lineops/lifecycle"
-#   executor_socket: "/run/lineops-executor/executor.sock"
-# 私有 CA 如原来位于 /etc/lineops-agent/ca.pem，在 panel.ca_file 填写该路径。
-# 旧版 identity.json 继续从 agent_state_dir 读取，不复制到新目录重新注册。
-# 改路径不等于迁移文件；已有安装需通过迁移流程同步更新 systemd、
-# 实例 runtime.json、权限和恢复程序记录，不能只编辑本文件后重启。
 
 # systemd unit 仍由系统放在 /etc/systemd/system，日志仍通过 journalctl 查看。
 # 协议、端口、用户授权和节点证书由面板发布，不在本文件重复维护。

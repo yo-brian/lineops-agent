@@ -23,6 +23,7 @@ API_KEY=""
 VPS_ID=""
 NODE_ID=""
 FORCE_CLEAN=0
+UPGRADE=0
 RELEASE_URL="${LINEOPS_AGENT_RELEASE_URL:-https://github.com/yo-brian/lineops-agent/releases/latest/download}"
 
 while [[ $# -gt 0 ]]; do
@@ -32,6 +33,7 @@ while [[ $# -gt 0 ]]; do
     --vps-id) VPS_ID="$2"; shift 2 ;;
     --node-id) NODE_ID="$2"; shift 2 ;;
     --clean|--reinstall) FORCE_CLEAN=1; shift ;;
+    --upgrade) UPGRADE=1; shift ;;
     *) shift ;;
   esac
 done
@@ -39,6 +41,11 @@ done
 TMP_DIR=$(mktemp -d /tmp/lineops-agent-install.XXXXXXXX)
 cleanup() {
   rm -rf -- "$TMP_DIR"
+  if [[ -x /etc/lineops/bin/lineops-agent ]] && [[ -f /etc/systemd/system/lineops-agent.service ]]; then
+    if grep -qE 'api_key:\s*"?[A-Za-z0-9_-]{20,}' /etc/lineops/config.yml 2>/dev/null || [[ -f /etc/lineops/state/agent/credentials.json ]]; then
+      systemctl is-active --quiet lineops-agent.service || systemctl start lineops-agent.service >/dev/null 2>&1 || true
+    fi
+  fi
 }
 trap cleanup EXIT
 
@@ -212,7 +219,7 @@ UNIT
 systemctl daemon-reload
 systemctl enable lineops-agent.service
 
-if grep -qE 'api_key:\s*"?[A-Za-z0-9_-]{20,}' /etc/lineops/config.yml 2>/dev/null; then
+if grep -qE 'api_key:\s*"?[A-Za-z0-9_-]{20,}' /etc/lineops/config.yml 2>/dev/null || [[ -f /etc/lineops/state/agent/credentials.json ]]; then
   systemctl restart lineops-agent.service
   echo "Started lineops-agent.service"
 fi

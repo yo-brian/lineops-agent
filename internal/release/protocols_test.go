@@ -22,6 +22,8 @@ func protocolMatrix() []ProtocolOptions {
 			out = append(out, o)
 		}
 	}
+	out = append(out, ProtocolOptions{Protocol: "anytls", Security: "tls", Transport: "tcp"})
+	out = append(out, ProtocolOptions{Protocol: "hysteria2", Security: "tls", Transport: "quic"})
 	out = append(out, ProtocolOptions{Protocol: "vless", Security: "tls", Transport: "tcp", Flow: "xtls-rprx-vision"})
 	for _, flow := range []string{"", "xtls-rprx-vision"} {
 		out = append(out, ProtocolOptions{Protocol: "vless", Security: "reality", Transport: "tcp", Flow: flow, RealityHandshake: "127.0.0.1", RealityHandshakePort: 443})
@@ -54,6 +56,20 @@ func TestProtocolCompatibilityAndSecretBoundaries(t *testing.T) {
 	bad := []ProtocolOptions{
 		{Protocol: "vmess", Security: "reality", Transport: "tcp"},
 		{Protocol: "trojan", Security: "none", Transport: "tcp"},
+		{Protocol: "anytls", Security: "reality", Transport: "tcp"},
+		{Protocol: "anytls", Security: "none", Transport: "tcp"},
+		{Protocol: "anytls", Security: "tls", Transport: "ws", TransportPath: "/test"},
+		{Protocol: "anytls", Security: "tls", Transport: "grpc", GRPCServiceName: "lineops"},
+		{Protocol: "anytls", Security: "tls", Transport: "tcp", Flow: "xtls-rprx-vision"},
+		{Protocol: "hysteria2", Security: "reality", Transport: "quic"},
+		{Protocol: "hysteria2", Security: "none", Transport: "quic"},
+		{Protocol: "hysteria2", Security: "tls", Transport: "tcp"},
+		{Protocol: "hysteria2", Security: "tls", Transport: "ws", TransportPath: "/test"},
+		{Protocol: "hysteria2", Security: "tls", Transport: "grpc", GRPCServiceName: "lineops"},
+		{Protocol: "hysteria2", Security: "tls", Transport: "quic", Flow: "xtls-rprx-vision"},
+		{Protocol: "hysteria2", Security: "tls", Transport: "quic", RelayAddress: "8.8.8.8", RelayPort: 443},
+		{Protocol: "vless", Security: "tls", Transport: "quic"},
+		{Protocol: "trojan", Security: "tls", Transport: "quic"},
 		{Protocol: "vless", Security: "tls", Transport: "ws", Flow: "xtls-rprx-vision", TransportPath: "/test"},
 		{Protocol: "vless", Security: "tls", Transport: "grpc", GRPCServiceName: "a/b"},
 		{Protocol: "vless", Security: "tls", Transport: "ws", TransportPath: "/test\r\nHost: evil"},
@@ -84,6 +100,58 @@ func TestProtocolCompatibilityAndSecretBoundaries(t *testing.T) {
 		if err = ss.validateProtocol(); err != nil {
 			t.Fatal(options.Method, err)
 		}
+	}
+}
+
+func TestAnyTLSOutboundAndMihomoShape(t *testing.T) {
+	pass, err := (ProtocolOptions{Protocol: "anytls"}).NewPassword()
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := Node{ProtocolOptions: ProtocolOptions{Protocol: "anytls", Security: "tls", Transport: "tcp"}, ID: "anytls", GroupID: "group", CredentialID: "credential", Password: pass, Listen: "127.0.0.1", Port: 15443, ServerName: "node.example", CertificateID: "cert"}
+	if err = n.validateProtocol(); err != nil {
+		t.Fatal(err)
+	}
+	if _, hasNetwork := ClientOutbound(n, "node.example")["network"]; hasNetwork {
+		t.Fatal("AnyTLS sing-box client outbound must not emit network field")
+	}
+	if mihomo := MihomoProxy(n, "node.example"); mihomo["type"] != "anytls" || mihomo["sni"] != "node.example" || mihomo["network"] != nil {
+		t.Fatalf("unexpected AnyTLS mihomo proxy: %+v", mihomo)
+	}
+}
+
+func TestHysteria2InboundOutboundAndMihomoShape(t *testing.T) {
+	norm := (ProtocolOptions{Protocol: "hysteria2"}).Normalized()
+	if norm.Security != "tls" || norm.Transport != "quic" {
+		t.Fatalf("unexpected Hysteria 2 normalized options: %+v", norm)
+	}
+	pass, err := norm.NewPassword()
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := Node{ProtocolOptions: norm, ID: "hy2", GroupID: "group", CredentialID: "credential", Password: pass, Listen: "127.0.0.1", Port: 15443, ServerName: "node.example", CertificateID: "cert"}
+	if n.ListenerNetwork() != "udp" {
+		t.Fatalf("expected udp listener network, got %s", n.ListenerNetwork())
+	}
+	if err = n.validateProtocol(); err != nil {
+		t.Fatal(err)
+	}
+	if err = ValidateClientNode(Node{ProtocolOptions: norm, Password: pass, ServerName: "node.example"}); err != nil {
+		t.Fatalf("valid Hysteria 2 client node rejected: %v", err)
+	}
+	if err = ValidateClientNode(Node{ProtocolOptions: ProtocolOptions{Protocol: "hysteria2", Security: "tls", Transport: "quic", RelayAddress: "8.8.8.8", RelayPort: 443}, Password: pass, ServerName: "node.example"}); err == nil {
+		t.Fatal("Hysteria 2 over TCP relay must be rejected")
+	}
+	in := inbound(n, "/tmp/test")
+	if in["type"] != "hysteria2" || in["transport"] != nil {
+		t.Fatalf("unexpected Hysteria 2 inbound: %+v", in)
+	}
+	out := ClientOutbound(n, "node.example")
+	if out["type"] != "hysteria2" || out["password"] != pass || out["network"] != nil {
+		t.Fatalf("unexpected Hysteria 2 sing-box outbound: %+v", out)
+	}
+	if mihomo := MihomoProxy(n, "node.example"); mihomo["type"] != "hysteria2" || mihomo["password"] != pass || mihomo["sni"] != "node.example" || mihomo["network"] != nil {
+		t.Fatalf("unexpected Hysteria 2 mihomo proxy: %+v", mihomo)
 	}
 }
 

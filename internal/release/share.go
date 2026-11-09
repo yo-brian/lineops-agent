@@ -36,6 +36,11 @@ func ShareURI(n Node, address, name string) string {
 		}
 		return u.String()
 	}
+	if o.Protocol == "hysteria2" {
+		u.User = url.User(n.Password)
+		u.RawQuery = url.Values{"sni": {n.ServerName}}.Encode()
+		return u.String()
+	}
 	q := url.Values{"security": {o.Security}, "type": {o.Transport}, "sni": {n.ServerName}}
 	if o.Protocol == "vless" {
 		u.User = url.User(n.UUID)

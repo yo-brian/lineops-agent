@@ -23,7 +23,7 @@ func TestRealTeamCredentialsAndTraffic(t *testing.T) {
 	if binary == "" {
 		t.Skip("stats-enabled core required")
 	}
-	for _, protocol := range []string{"vless", "vmess", "trojan", "aes-128-gcm", "aes-256-gcm", "chacha20-ietf-poly1305", "2022-blake3-aes-128-gcm", "2022-blake3-aes-256-gcm"} {
+	for _, protocol := range []string{"vless", "vmess", "trojan", "anytls", "hysteria2", "aes-128-gcm", "aes-256-gcm", "chacha20-ietf-poly1305", "2022-blake3-aes-128-gcm", "2022-blake3-aes-256-gcm"} {
 		t.Run(protocol, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 40*time.Second)
 			defer cancel()
@@ -34,15 +34,29 @@ func TestRealTeamCredentialsAndTraffic(t *testing.T) {
 					t.Fatal(e)
 				}
 			}
-			l, e := net.Listen("tcp4", "127.0.0.1:0")
-			if e != nil {
-				t.Fatal(e)
+			var port uint16
+			if protocol == "hysteria2" {
+				pc, e := net.ListenPacket("udp4", "127.0.0.1:0")
+				if e != nil {
+					t.Fatal(e)
+				}
+				port = uint16(pc.LocalAddr().(*net.UDPAddr).Port)
+				pc.Close()
+			} else {
+				l, e := net.Listen("tcp4", "127.0.0.1:0")
+				if e != nil {
+					t.Fatal(e)
+				}
+				port = uint16(l.Addr().(*net.TCPAddr).Port)
+				l.Close()
 			}
-			port := uint16(l.Addr().(*net.TCPAddr).Port)
-			l.Close()
+			var e error
 			id := "aaaaaaaa-1111-4111-8111-111111111111"
 			n := Node{ID: id, GroupID: "team", CredentialID: "legacy", Listen: "127.0.0.1", Port: port, CertificateID: cert.ID, ServerName: "lineops-test.invalid", UUID: "11111111-1111-4111-8111-111111111111", ProtocolOptions: ProtocolOptions{Protocol: protocol, Security: "tls", Transport: "tcp"}, Users: []UserCredential{{ID: "alice", UUID: "22222222-2222-4222-8222-222222222222"}, {ID: "shared", UUID: "33333333-3333-4333-8333-333333333333"}}}
-			if protocol == "trojan" {
+			if protocol == "hysteria2" {
+				n.ProtocolOptions.Transport = "quic"
+			}
+			if protocol == "trojan" || protocol == "anytls" || protocol == "hysteria2" {
 				n.UUID = ""
 				n.Password = "legacy-long-random-password"
 				for i := range n.Users {

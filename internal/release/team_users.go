@@ -18,7 +18,7 @@ type UserCredential struct {
 
 func (n Node) SupportsUsers() bool {
 	p := n.ProtocolOptions.Normalized()
-	return p.RelayAddress == "" && (p.Protocol == "vless" || p.Protocol == "vmess" || p.Protocol == "trojan" || p.Protocol == "shadowsocks")
+	return p.RelayAddress == "" && (p.Protocol == "vless" || p.Protocol == "vmess" || p.Protocol == "trojan" || p.Protocol == "anytls" || p.Protocol == "hysteria2" || p.Protocol == "shadowsocks")
 }
 
 // Derive a separate SS2022 server identity: a member receiving it must not learn

@@ -44,6 +44,13 @@ func TestTCPRelayRenderPolicyAndValidation(t *testing.T) {
 		t.Fatal("old capability accepted relay")
 	}
 	m.Template = TCPRelayTemplate
+	hyRelay := n
+	hyRelay.UUID = ""
+	hyRelay.Password = "hysteria2-relay-secret"
+	hyRelay.ProtocolOptions = ProtocolOptions{Protocol: "hysteria2", Security: "tls", Transport: "quic", RelayAddress: "8.8.8.8", RelayPort: 443}
+	if ValidateModel(Model{Schema: 1, Template: TCPRelayTemplate, Nodes: []Node{hyRelay}}, nil, time.Now()) == nil {
+		t.Fatal("TCP relay accepted QUIC/UDP Hysteria 2")
+	}
 	p := PolicySet{Groups: map[string]GroupPolicy{"group": {Version: 1, ExpiresAt: time.Now().Add(-time.Second)}}}
 	effective, err := p.Effective(m, time.Now())
 	if err != nil || len(effective.Nodes) != 0 {
@@ -57,10 +64,10 @@ func TestTCPRelayRenderPolicyAndValidation(t *testing.T) {
 }
 
 func TestTCPRelayShareParsing(t *testing.T) {
-	for _, protocol := range []string{"vless", "vmess", "trojan", "shadowsocks"} {
+	for _, protocol := range []string{"vless", "vmess", "trojan", "anytls", "shadowsocks"} {
 		n := relayFixture()
 		n.Protocol = protocol
-		if protocol == "trojan" || protocol == "shadowsocks" {
+		if protocol == "trojan" || protocol == "anytls" || protocol == "shadowsocks" {
 			n.UUID = ""
 			n.Password = "secret@:/?#&"
 		}

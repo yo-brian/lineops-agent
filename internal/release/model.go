@@ -187,6 +187,9 @@ func ValidateModel(m Model, certs []Certificate, now time.Time) error {
 		}
 		for _, other := range m.Nodes[:i] {
 			if PortConflict(n, other) {
+				if n.ListenerNetwork() == "udp" {
+					return errors.New("overlapping UDP listener")
+				}
 				return errors.New("overlapping TCP listener")
 			}
 		}
@@ -263,9 +266,10 @@ func validateShape(m Model) error {
 }
 
 // PortConflict conservatively treats IPv6 wildcard as dual stack. Independent
-// instances share this test under the host port lock; only host namespace TCP exists.
+// instances share this test under the host port lock; TCP and UDP socket spaces
+// are distinct in the host network namespace.
 func PortConflict(a, b Node) bool {
-	if a.Port != b.Port {
+	if a.Port != b.Port || a.ListenerNetwork() != b.ListenerNetwork() {
 		return false
 	}
 	x, e := netip.ParseAddr(a.Listen)
@@ -318,6 +322,7 @@ func SemanticDiff(old, next Model, targetGroups []string) ([]string, error) {
 	sort.Strings(out)
 	return out, nil
 }
+
 // ValidatePreRenderedModel validates only host-level safety invariants (node IDs,
 // non-overlapping unprivileged listen ports, and TLS certificate chains) when
 // the panel supplies a pre-rendered sing-box configuration. Protocol-specific
@@ -351,6 +356,9 @@ func ValidatePreRenderedModel(m Model, certs []Certificate, now time.Time) error
 		}
 		for _, other := range m.Nodes[:i] {
 			if PortConflict(n, other) {
+				if n.ListenerNetwork() == "udp" {
+					return errors.New("overlapping UDP listener")
+				}
 				return errors.New("overlapping TCP listener")
 			}
 		}

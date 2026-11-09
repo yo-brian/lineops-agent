@@ -24,6 +24,33 @@ func TestShareURI(t *testing.T) {
 	if u.User.Username() != n.Password || u.Query().Get("path") != n.TransportPath || u.Query().Get("host") != n.TransportHost {
 		t.Fatal("password or WS escaping failed")
 	}
+	n.ProtocolOptions = ProtocolOptions{Protocol: "anytls", Security: "tls", Transport: "tcp"}
+	u, _ = url.Parse(ShareURI(n, "example.com", "anytls-node"))
+	if u.Scheme != "anytls" || u.User.Username() != n.Password || u.Query().Get("security") != "tls" || u.Query().Get("sni") != n.ServerName || u.Query().Get("type") != "tcp" || u.Fragment != "anytls-node" {
+		t.Fatal("AnyTLS share URI mapping failed")
+	}
+	n.ProtocolOptions = ProtocolOptions{Protocol: "hysteria2", Security: "tls", Transport: "quic"}
+	hyRaw := ShareURI(n, "example.com", "hy2-node")
+	u, _ = url.Parse(hyRaw)
+	if u.Scheme != "hysteria2" || u.User.Username() != n.Password || u.Query().Get("sni") != n.ServerName || u.Fragment != "hy2-node" {
+		t.Fatal("Hysteria 2 share URI mapping failed")
+	}
+	parsedHy, hyHost, err := ParseShareURI(hyRaw)
+	if err != nil || hyHost != "example.com" || parsedHy.Protocol != "hysteria2" || parsedHy.Transport != "quic" || parsedHy.Security != "tls" || parsedHy.Password != n.Password || parsedHy.ServerName != n.ServerName {
+		t.Fatalf("Hysteria 2 share URI parse failed: %v %+v", err, parsedHy)
+	}
+	if parsedAlias, _, err := ParseShareURI("hy2://secret1234@example.com:8443?sni=hy.example.com&insecure=0#alias"); err != nil || parsedAlias.Protocol != "hysteria2" || parsedAlias.Transport != "quic" || parsedAlias.Password != "secret1234" {
+		t.Fatalf("hy2:// alias parse failed: %v %+v", err, parsedAlias)
+	}
+	for _, badHy := range []string{
+		"hysteria2://secret1234@example.com:8443?sni=hy.example.com&insecure=1",
+		"hy2://secret1234@example.com:8443?sni=hy.example.com&type=ws",
+		"hysteria2://secret1234@example.com:8443?sni=hy.example.com&security=reality",
+	} {
+		if _, _, err := ParseShareURI(badHy); err == nil {
+			t.Fatalf("accepted unsafe or incompatible Hysteria 2 share link: %s", badHy)
+		}
+	}
 	n.ProtocolOptions = ProtocolOptions{Protocol: "vmess", Security: "tls", Transport: "grpc", GRPCServiceName: "rpc"}
 	data, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(ShareURI(n, "example.com", "test"), "vmess://"))
 	if err != nil {

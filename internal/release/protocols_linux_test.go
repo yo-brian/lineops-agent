@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"os/exec"
@@ -29,19 +30,31 @@ func TestRealMultiProtocolClients(t *testing.T) {
 		}
 	}
 	m := Model{Schema: 1, Template: MultiProtocolTemplate}
-	var reservations []net.Listener
+	var reservations []io.Closer
 	defer func() {
 		for _, l := range reservations {
 			_ = l.Close()
 		}
 	}()
 	for i, options := range protocolMatrix() {
-		l, err := net.Listen("tcp4", "127.0.0.1:0")
-		if err != nil {
-			t.Fatal(err)
+		var port uint16
+		if options.Protocol == "hysteria2" {
+			pc, err := net.ListenPacket("udp4", "127.0.0.1:0")
+			if err != nil {
+				t.Fatal(err)
+			}
+			reservations = append(reservations, pc)
+			port = uint16(pc.LocalAddr().(*net.UDPAddr).Port)
+		} else {
+			l, err := net.Listen("tcp4", "127.0.0.1:0")
+			if err != nil {
+				t.Fatal(err)
+			}
+			reservations = append(reservations, l)
+			port = uint16(l.Addr().(*net.TCPAddr).Port)
 		}
-		reservations = append(reservations, l)
-		n := Node{ProtocolOptions: options, ID: fmt.Sprintf("node-%d", i), GroupID: "group", CredentialID: fmt.Sprintf("credential-%d", i), Listen: "127.0.0.1", Port: uint16(l.Addr().(*net.TCPAddr).Port), ServerName: "lineops-test.invalid"}
+		n := Node{ProtocolOptions: options, ID: fmt.Sprintf("node-%d", i), GroupID: "group", CredentialID: fmt.Sprintf("credential-%d", i), Listen: "127.0.0.1", Port: port, ServerName: "lineops-test.invalid"}
+		var err error
 		if n.Protocol == "vless" || n.Protocol == "vmess" {
 			n.UUID = fmt.Sprintf("11111111-1111-4111-8111-%012d", i)
 		} else {
@@ -162,14 +175,25 @@ func TestRealMultiProtocolSystemdPublication(t *testing.T) {
 	}
 	cert := testCertificate(t)
 	m := Model{Schema: 1, Template: MultiProtocolTemplate}
-	for i, index := range []int{1, 5, 7, 11, 15} {
+	for i, index := range []int{1, 5, 7, 10, 12, 15} {
 		o := protocolMatrix()[index]
-		listener, err := net.Listen("tcp4", "127.0.0.1:0")
-		if err != nil {
-			t.Fatal(err)
+		var port uint16
+		var err error
+		if o.Protocol == "hysteria2" {
+			pc, err := net.ListenPacket("udp4", "127.0.0.1:0")
+			if err != nil {
+				t.Fatal(err)
+			}
+			port = uint16(pc.LocalAddr().(*net.UDPAddr).Port)
+			pc.Close()
+		} else {
+			listener, err := net.Listen("tcp4", "127.0.0.1:0")
+			if err != nil {
+				t.Fatal(err)
+			}
+			port = uint16(listener.Addr().(*net.TCPAddr).Port)
+			listener.Close()
 		}
-		port := uint16(listener.Addr().(*net.TCPAddr).Port)
-		listener.Close()
 		n := Node{ProtocolOptions: o, ID: fmt.Sprintf("node-%d", i), GroupID: "group", CredentialID: fmt.Sprintf("credential-%d", i), Listen: "127.0.0.1", Port: port, ServerName: "lineops-test.invalid"}
 		if n.Protocol == "vless" || n.Protocol == "vmess" {
 			n.UUID = fmt.Sprintf("22222222-2222-4222-8222-%012d", i)

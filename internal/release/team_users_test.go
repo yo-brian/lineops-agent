@@ -60,6 +60,18 @@ func TestTeamUsersRenderRevocationAndRecovery(t *testing.T) {
 	if validateShape(old) == nil {
 		t.Fatal("old executors must not accept team models")
 	}
+	hy := Node{ID: "hy2-node", GroupID: "group", CredentialID: "hy2-legacy", Password: "hy2-root-password", Port: 15443, Listen: "127.0.0.1", ServerName: "node.example", CertificateID: "cert", ProtocolOptions: ProtocolOptions{Protocol: "hysteria2", Security: "tls", Transport: "quic"}, Users: []UserCredential{{ID: "alice", Password: "hy2-alice-password"}, {ID: "bob", Password: "hy2-bob-password"}}}
+	hyModel := Model{Schema: 1, Template: ModelTemplate([]Node{hy}), Nodes: []Node{hy}}
+	if hyModel.Template != TeamTemplate {
+		t.Fatalf("expected TeamTemplate for Hysteria 2 team users, got %s", hyModel.Template)
+	}
+	if e := validateShape(hyModel); e != nil {
+		t.Fatalf("valid Hysteria 2 team model rejected: %v", e)
+	}
+	hyInbound := inbound(hy, "/tmp/test")
+	if len(hyInbound["users"].([]any)) != 3 {
+		t.Fatalf("expected 3 Hysteria 2 users, got %+v", hyInbound["users"])
+	}
 }
 
 func TestShadowsocksIndependentIdentities(t *testing.T) {

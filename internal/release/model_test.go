@@ -28,6 +28,19 @@ func TestSemanticIsolationAndAddressConflicts(t *testing.T) {
 	if PortConflict(a, b) {
 		t.Fatal("distinct explicit addresses falsely overlap")
 	}
+	udpA := Node{ID: "udp-a", GroupID: "group-a", CredentialID: "cred-udp-a", Password: "password-udp-a", Listen: "0.0.0.0", Port: 24001, ServerName: "node.example", CertificateID: "cert", ProtocolOptions: ProtocolOptions{Protocol: "hysteria2", Security: "tls", Transport: "quic"}}
+	tcpA := Node{ID: "tcp-a", GroupID: "group-a", CredentialID: "cred-tcp-a", UUID: a.UUID, Listen: "0.0.0.0", Port: 24001, ServerName: "node.example", CertificateID: "cert"}
+	if PortConflict(udpA, tcpA) {
+		t.Fatal("TCP and UDP listeners on same port must not conflict")
+	}
+	udpB := udpA
+	udpB.ID = "udp-b"
+	udpB.CredentialID = "cred-udp-b"
+	udpB.Password = "password-udp-b"
+	udpB.Listen = "127.0.0.1"
+	if !PortConflict(udpA, udpB) {
+		t.Fatal("overlapping UDP listeners not detected")
+	}
 }
 func TestPoliciesDoNotResurrectCredentials(t *testing.T) {
 	now := time.Now()

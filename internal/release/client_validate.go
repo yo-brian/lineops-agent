@@ -1,12 +1,14 @@
 package release
 
-// ValidateClientNode checks only client protocol settings and credentials.
-// A synthetic relay destination selects the existing client-only validation
-// rules. It is never stored, resolved, dialled or rendered into configuration.
+import "errors"
+
+// ValidateClientNode checks only client protocol settings and credentials without
+// treating the node as a pure TCP relay entry.
 func ValidateClientNode(n Node) error {
-	n.RelayAddress = "8.8.8.8"
-	n.RelayPort = 443
-	return n.validateProtocol()
+	if n.RelayAddress != "" || n.RelayPort != 0 {
+		return errors.New("external client node cannot include TCP relay parameters")
+	}
+	return n.validateProtocolMode(true)
 }
 
 // ValidateNodeConfiguration validates server/client protocol parameters before saving.

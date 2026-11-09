@@ -77,8 +77,13 @@ func ParseShareURI(raw string) (Node, string, error) {
 		q := u.Query()
 		for k := range q {
 			switch k {
-			case "security", "type", "sni", "flow", "encryption", "pbk", "sid", "fp", "path", "host", "serviceName", "mode", "spx", "support-x25519mlkem768":
+			case "security", "type", "sni", "flow", "encryption", "pbk", "sid", "fp", "path", "host", "serviceName", "mode", "spx", "support-x25519mlkem768", "insecure":
 			default:
+				return fail()
+			}
+		}
+		if q.Has("insecure") {
+			if (u.Scheme != "hysteria2" && u.Scheme != "hy2") || (q.Get("insecure") != "" && q.Get("insecure") != "0" && q.Get("insecure") != "false") {
 				return fail()
 			}
 		}
@@ -91,10 +96,14 @@ func ParseShareURI(raw string) (Node, string, error) {
 		if q.Get("mode") != "" && q.Get("mode") != "gun" {
 			return fail()
 		}
-		n.ProtocolOptions = ProtocolOptions{Protocol: u.Scheme, Security: q.Get("security"), Transport: q.Get("type"), Flow: q.Get("flow"), TransportPath: q.Get("path"), TransportHost: q.Get("host"), GRPCServiceName: q.Get("serviceName"), RealityPublicKey: q.Get("pbk"), RealityShortID: q.Get("sid")}
+		scheme := u.Scheme
+		if scheme == "hy2" {
+			scheme = "hysteria2"
+		}
+		n.ProtocolOptions = ProtocolOptions{Protocol: scheme, Security: q.Get("security"), Transport: q.Get("type"), Flow: q.Get("flow"), TransportPath: q.Get("path"), TransportHost: q.Get("host"), GRPCServiceName: q.Get("serviceName"), RealityPublicKey: q.Get("pbk"), RealityShortID: q.Get("sid")}
 		n.ServerName = q.Get("sni")
 		if q.Has("spx") || q.Has("support-x25519mlkem768") {
-			if u.Scheme != "vless" || n.Security != "reality" {
+			if scheme != "vless" || n.Security != "reality" {
 				return fail()
 			}
 			n.RealitySpiderX = q.Get("spx")
@@ -108,10 +117,16 @@ func ParseShareURI(raw string) (Node, string, error) {
 		if n.ServerName == "" {
 			n.ServerName = host
 		}
-		switch u.Scheme {
+		switch scheme {
 		case "vless":
 			n.UUID = u.User.Username()
-		case "trojan":
+		case "trojan", "anytls":
+			n.Password = u.User.Username()
+		case "hysteria2":
+			if (q.Get("security") != "" && q.Get("security") != "tls") || (q.Get("type") != "" && q.Get("type") != "quic") || q.Get("flow") != "" || q.Get("path") != "" || q.Get("host") != "" || q.Get("serviceName") != "" || q.Get("pbk") != "" || q.Get("sid") != "" {
+				return fail()
+			}
+			n.ProtocolOptions = ProtocolOptions{Protocol: "hysteria2", Security: "tls", Transport: "quic"}
 			n.Password = u.User.Username()
 		case "ss":
 			n.ProtocolOptions = ProtocolOptions{Protocol: "shadowsocks", Security: "none", Transport: "tcp"}

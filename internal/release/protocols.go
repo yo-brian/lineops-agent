@@ -42,7 +42,11 @@ func (o ProtocolOptions) Normalized() ProtocolOptions {
 		o.Protocol = "vless"
 	}
 	if o.Transport == "" {
-		o.Transport = "tcp"
+		if o.Protocol == "hysteria2" {
+			o.Transport = "quic"
+		} else {
+			o.Transport = "tcp"
+		}
 	}
 	if o.Security == "" {
 		if o.Protocol == "shadowsocks" {
@@ -59,11 +63,19 @@ var grpcNamePattern = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,128}$`)
 var shortIDPattern = regexp.MustCompile(`^[0-9a-f]{16}$`)
 
 func (o ProtocolOptions) Validate() error {
+	return o.validate(o.RelayAddress != "" || o.RelayPort != 0)
+}
+
+func (o ProtocolOptions) validate(clientOnly bool) error {
 	o = o.Normalized()
 	if o.RelayAddress != "" || o.RelayPort != 0 {
+		if o.Protocol == "hysteria2" {
+			return errors.New("TCP 中转不支持 Hysteria 2（QUIC/UDP）协议")
+		}
 		if !PublicRelayIP(o.RelayAddress) || o.RelayPort == 0 {
 			return errors.New("TCP 中转需要固定公网落地 IP 和端口")
 		}
+		clientOnly = true
 	}
 	switch o.Protocol {
 	case "vless":
@@ -73,6 +85,14 @@ func (o ProtocolOptions) Validate() error {
 	case "vmess", "trojan":
 		if o.Security != "tls" {
 			return errors.New("VMess/Trojan 当前需要 TLS")
+		}
+	case "anytls":
+		if o.Security != "tls" || o.Transport != "tcp" {
+			return errors.New("AnyTLS 当前需要 TLS 和 TCP 传输")
+		}
+	case "hysteria2":
+		if o.Security != "tls" || o.Transport != "quic" {
+			return errors.New("Hysteria 2 当前需要 TLS 和 QUIC（UDP）传输")
 		}
 	case "shadowsocks":
 		if o.Security != "none" || o.Transport != "tcp" {
@@ -86,8 +106,18 @@ func (o ProtocolOptions) Validate() error {
 	}
 	switch o.Transport {
 	case "tcp":
+		if o.Protocol == "hysteria2" {
+			return errors.New("Hysteria 2 使用 QUIC（UDP）传输")
+		}
 		if o.TransportPath != "" || o.TransportHost != "" || o.GRPCServiceName != "" {
 			return errors.New("TCP 不接受 WS/gRPC 参数")
+		}
+	case "quic":
+		if o.Protocol != "hysteria2" {
+			return errors.New("QUIC（UDP）传输当前仅用于 Hysteria 2")
+		}
+		if o.TransportPath != "" || o.TransportHost != "" || o.GRPCServiceName != "" {
+			return errors.New("QUIC（UDP）不接受 WS/gRPC 参数")
 		}
 	case "ws":
 		if len(o.TransportPath) == 0 || len(o.TransportPath) > 256 || !strings.HasPrefix(o.TransportPath, "/") || strings.ContainsAny(o.TransportPath, "\r\n\t #") || o.GRPCServiceName != "" {
@@ -101,7 +131,7 @@ func (o ProtocolOptions) Validate() error {
 			return errors.New("gRPC 服务名仅允许 1–128 位字母、数字、下划线和短横线")
 		}
 	default:
-		return errors.New("传输仅支持 TCP、WebSocket、gRPC")
+		return errors.New("传输仅支持 TCP、WebSocket、gRPC、QUIC")
 	}
 	if o.Protocol == "shadowsocks" {
 		switch o.Method {
@@ -116,12 +146,12 @@ func (o ProtocolOptions) Validate() error {
 		if o.Transport != "tcp" {
 			return errors.New("Reality 当前仅支持 TCP，可选 Vision")
 		}
-		if o.RelayAddress == "" && (!validHandshake(o.RealityHandshake) || o.RealityHandshakePort == 0) {
+		if !clientOnly && (!validHandshake(o.RealityHandshake) || o.RealityHandshakePort == 0) {
 			return errors.New("Reality 握手目标需要主机名或 IP 及有效端口")
 		}
 		key, err := base64.RawURLEncoding.DecodeString(o.RealityPublicKey)
 		validShortID := shortIDPattern.MatchString(o.RealityShortID)
-		if o.RelayAddress != "" {
+		if clientOnly {
 			_, e := hex.DecodeString(o.RealityShortID)
 			validShortID = e == nil && len(o.RealityShortID) <= 16
 		}
@@ -169,6 +199,15 @@ func (n Node) UsesCertificate() bool {
 	return n.RelayAddress == "" && n.ProtocolOptions.Normalized().Security == "tls"
 }
 
+// ListenerNetwork returns the host socket transport ("udp" or "tcp") bound by
+// the managed inbound listener, distinct from the proxied application traffic.
+func (n Node) ListenerNetwork() string {
+	if n.RelayAddress == "" && n.ProtocolOptions.Normalized().Protocol == "hysteria2" {
+		return "udp"
+	}
+	return "tcp"
+}
+
 func PublicRelayIP(host string) bool {
 	ip, err := netip.ParseAddr(host)
 	if err != nil {
@@ -184,13 +223,17 @@ func (n Node) credential() string {
 	return n.Password
 }
 func (n Node) validateProtocol() error {
+	return n.validateProtocolMode(false)
+}
+func (n Node) validateProtocolMode(clientOnly bool) error {
 	o := n.ProtocolOptions.Normalized()
+	clientMode := clientOnly || n.RelayAddress != ""
 	if n.RelayTrustPEM != "" {
 		if n.RelayAddress == "" || o.Security != "tls" || len(n.RelayTrustPEM) > 1<<20 || !x509.NewCertPool().AppendCertsFromPEM([]byte(n.RelayTrustPEM)) {
 			return errors.New("invalid relay trust certificate")
 		}
 	}
-	if err := o.Validate(); err != nil {
+	if err := o.validate(clientMode); err != nil {
 		return err
 	}
 	if o.Protocol == "vless" || o.Protocol == "vmess" {
@@ -198,7 +241,7 @@ func (n Node) validateProtocol() error {
 			return errors.New("UUID credential required")
 		}
 	} else {
-		if n.UUID != "" || len(n.Password) == 0 || (n.RelayAddress == "" && len(n.Password) < 16) || len(n.Password) > 128 || strings.ContainsAny(n.Password, "\r\n\x00") {
+		if n.UUID != "" || len(n.Password) == 0 || (!clientMode && len(n.Password) < 16) || len(n.Password) > 128 || strings.ContainsAny(n.Password, "\r\n\x00") {
 			return errors.New("password credential required")
 		}
 		if strings.HasPrefix(o.Method, "2022-") {
@@ -209,7 +252,7 @@ func (n Node) validateProtocol() error {
 			keys := strings.Split(n.Password, ":")
 			// Managed server inbounds still require one key. Client/relay
 			// passwords may include the server identity and user keys.
-			if n.RelayAddress == "" && len(keys) != 1 {
+			if !clientMode && len(keys) != 1 {
 				return errors.New("invalid Shadowsocks 2022 server key")
 			}
 			for _, encoded := range keys {
@@ -220,14 +263,14 @@ func (n Node) validateProtocol() error {
 			}
 		}
 	}
-	if n.UsesCertificate() {
+	if !clientOnly && n.UsesCertificate() {
 		if !identifier.MatchString(n.CertificateID) || !serverNamePattern.MatchString(n.ServerName) {
 			return errors.New("TLS certificate and server name required")
 		}
 	} else if n.CertificateID != "" {
 		return errors.New("unexpected certificate dependency")
 	}
-	if n.RelayAddress != "" {
+	if clientMode {
 		if n.RealityPrivateKey != "" || (o.Security != "none" && !serverNamePattern.MatchString(n.ServerName)) {
 			return errors.New("relay requires client TLS parameters only")
 		}
@@ -305,7 +348,7 @@ func inbound(n Node, dir string) map[string]any {
 			user["flow"] = o.Flow
 		}
 		out["users"] = []any{user}
-	case "trojan":
+	case "trojan", "anytls", "hysteria2":
 		user["password"] = n.Password
 		out["users"] = []any{user}
 	case "shadowsocks":
@@ -317,7 +360,7 @@ func inbound(n Node, dir string) map[string]any {
 		users := []any{}
 		for _, v := range n.authenticationIdentities() {
 			user := map[string]string{"name": "credential-" + v.CredentialID}
-			if o.Protocol == "trojan" || o.Protocol == "shadowsocks" {
+			if o.Protocol == "trojan" || o.Protocol == "anytls" || o.Protocol == "hysteria2" || o.Protocol == "shadowsocks" {
 				user["password"] = v.Password
 			} else {
 				user["uuid"] = v.UUID
@@ -347,7 +390,10 @@ func inbound(n Node, dir string) map[string]any {
 // Neither exposes a Reality private key or its server-side handshake target.
 func ClientOutbound(n Node, address string) map[string]any {
 	o := n.ProtocolOptions.Normalized()
-	out := map[string]any{"type": o.Protocol, "tag": "node-" + n.ID, "server": address, "server_port": n.Port, "network": "tcp"}
+	out := map[string]any{"type": o.Protocol, "tag": "node-" + n.ID, "server": address, "server_port": n.Port}
+	if o.Protocol != "anytls" && o.Protocol != "hysteria2" {
+		out["network"] = "tcp"
+	}
 	switch o.Protocol {
 	case "vless", "vmess":
 		out["uuid"] = n.UUID
@@ -358,7 +404,7 @@ func ClientOutbound(n Node, address string) map[string]any {
 			out["security"] = "auto"
 			out["alter_id"] = 0
 		}
-	case "trojan", "shadowsocks":
+	case "trojan", "anytls", "hysteria2", "shadowsocks":
 		out["password"] = n.Password
 	}
 	if o.Method != "" {
@@ -384,7 +430,7 @@ func MihomoProxy(n Node, address string) map[string]any {
 	if protocol == "shadowsocks" {
 		protocol = "ss"
 	}
-	out := map[string]any{"name": "node-" + n.ID, "type": protocol, "server": address, "port": n.Port, "udp": false}
+	out := map[string]any{"name": "node-" + n.ID, "type": protocol, "server": address, "port": n.Port, "udp": o.Protocol == "hysteria2"}
 	if o.Protocol == "vless" || o.Protocol == "vmess" {
 		out["uuid"] = n.UUID
 	} else {
@@ -401,9 +447,11 @@ func MihomoProxy(n Node, address string) map[string]any {
 		out["flow"] = o.Flow
 	}
 	if o.Security != "none" {
-		out["tls"] = true
+		if o.Protocol != "hysteria2" {
+			out["tls"] = true
+		}
 		out["skip-cert-verify"] = false
-		if o.Protocol == "trojan" {
+		if o.Protocol == "trojan" || o.Protocol == "anytls" || o.Protocol == "hysteria2" {
 			out["sni"] = n.ServerName
 		} else {
 			out["servername"] = n.ServerName
@@ -416,7 +464,7 @@ func MihomoProxy(n Node, address string) map[string]any {
 			}
 		}
 	}
-	if o.Protocol != "shadowsocks" {
+	if o.Protocol != "shadowsocks" && o.Protocol != "anytls" && o.Protocol != "hysteria2" {
 		out["network"] = o.Transport
 	}
 	if o.Transport == "ws" {

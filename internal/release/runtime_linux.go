@@ -34,7 +34,7 @@ func command(ctx context.Context, name string, args ...string) error {
 	return nil
 }
 func runtimeValid(ctx context.Context, r RuntimeConfig) error {
-	if !identifier.MatchString(r.InstanceID) || !identifier.MatchString(r.Epoch) || !identifier.MatchString(r.ServiceUser) || r.ServiceUser == "root" || r.BinaryVersion != "1.14.0" {
+	if !identifier.MatchString(r.InstanceID) || !identifier.MatchString(r.Epoch) || !identifier.MatchString(r.ServiceUser) || r.ServiceUser == "root" || !SupportedSingboxVersion(r.BinaryVersion) {
 		return errors.New("unsupported runtime registration")
 	}
 	for _, p := range []string{r.Binary, r.RecoveryBinary} {

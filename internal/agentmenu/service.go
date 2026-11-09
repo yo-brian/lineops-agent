@@ -40,6 +40,8 @@ func Command(name string) error {
 		return m.action("4")
 	case "singbox-restart":
 		return m.restartSingboxInstance()
+	case "singbox-version":
+		return m.switchSingboxVersion()
 	case "bbr":
 		return m.bbr()
 	case "unbind":
@@ -47,7 +49,7 @@ func Command(name string) error {
 	case "start", "stop", "restart", "enable", "disable":
 		return m.controlAgent(name)
 	default:
-		return errors.New("可用命令：menu、doctor、config、status、log、singbox-log、singbox-restart、start、stop、restart、enable、disable、bbr、unbind")
+		return errors.New("可用命令：menu、doctor、config、status、log、singbox-log、singbox-restart、singbox-version、start、stop、restart、enable、disable、bbr、unbind")
 	}
 }
 

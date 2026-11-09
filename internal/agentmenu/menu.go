@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"lineops-agent/internal/agentconfig"
+	"lineops-agent/internal/release"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -46,7 +47,7 @@ func Run() error {
 	}()
 	for {
 		m.printHeader()
-		fmt.Println("── 状态与诊断 ──\n1. 一键全面自检 (配置 / 面板通信 / 服务 / 节点协议握手)\n2. 查看本机服务与实例状态\n3. 查看 Agent 实时日志\n4. 查看 sing-box 实时日志\n── 配置与服务控制 ──\n5. 配置面板通信 (config.yml: 网址 / API Key / VPS ID)\n6. Agent 服务管理 (启动 / 停止 / 重启 / 开机自启)\n7. 重启或重新同步 sing-box 实例\n── 系统与维护 ──\n8. BBR 加速设置\n9. 升级、解绑与卸载维护\n0. 退出")
+		fmt.Println("── 状态与诊断 ──\n1. 一键全面自检 (配置 / 面板通信 / 服务 / 节点协议握手)\n2. 查看本机服务与实例状态\n3. 查看 Agent 实时日志\n4. 查看 sing-box 实时日志\n── 配置与服务控制 ──\n5. 配置面板通信 (config.yml: 网址 / API Key / VPS ID)\n6. Agent 服务管理 (启动 / 停止 / 重启 / 开机自启)\n7. sing-box 实例管理 (重启 / 切换版本 / 重新同步)\n── 系统与维护 ──\n8. BBR 加速设置\n9. 升级、解绑与卸载维护\n0. 退出")
 		choice, err := m.read("请选择", "")
 		if err != nil {
 			return err
@@ -354,8 +355,60 @@ func (m *menu) restartSingboxInstance() error {
 	return m.submit("POST", "/instances/"+id+"/restart", object{"version": impact["version"]})
 }
 
+func (m *menu) switchSingboxVersion() error {
+	if e := m.loadConfig(); e != nil {
+		return e
+	}
+	id, err := m.instance()
+	if err != nil {
+		return err
+	}
+	currentVer := "未知"
+	if b, e := os.ReadFile(filepath.Join(m.paths.InstancesDir, id, "runtime.json")); e == nil {
+		var rt struct {
+			BinaryVersion string `json:"binary_version"`
+		}
+		if json.Unmarshal(b, &rt) == nil && rt.BinaryVersion != "" {
+			currentVer = rt.BinaryVersion
+		}
+	}
+	fmt.Printf("当前实例 (%s) sing-box 版本: v%s\n可选 sing-box 正式版本：\n", id, clean(currentVer))
+	for idx, ver := range release.SupportedSingboxVersions {
+		tag := ""
+		if idx == 0 {
+			tag = " (最新稳定版)"
+		}
+		if ver == currentVer {
+			tag += " [当前运行]"
+		}
+		fmt.Printf("  %d. v%s%s\n", idx+1, ver, tag)
+	}
+	sel, err := m.read("请选择目标版本序号 (1-5，输入 0 取消)", "1")
+	if err != nil || sel == "0" || sel == "" {
+		return err
+	}
+	n, err := strconv.Atoi(sel)
+	if err != nil || n < 1 || n > len(release.SupportedSingboxVersions) {
+		return errors.New("版本序号无效")
+	}
+	targetVer := release.SupportedSingboxVersions[n-1]
+	if !m.confirm("将切换实例 " + id + " 的 sing-box 内核版本至 v" + targetVer + " 并重启生效") {
+		return nil
+	}
+	fmt.Printf("正在准备并验证 sing-box v%s 内核（如本机未缓存将自动从 GitHub Releases 下载）...\n", targetVer)
+	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
+	defer cancel()
+	eng := release.Engine{Paths: m.paths, Root: m.paths.InstancesDir, Runtime: release.SystemdRuntime{}}
+	applied, err := eng.SwitchVersion(ctx, id, targetVer)
+	if err != nil {
+		return fmt.Errorf("切换 sing-box 版本未完成：%w", err)
+	}
+	fmt.Printf("已成功将实例 %s 切换至 sing-box v%s 并验证运行正常（下次心跳将自动同步至面板）。\n", id, applied)
+	return nil
+}
+
 func (m *menu) singboxMenu() error {
-	choice, err := m.read("1 重启 sing-box 实例 / 2 重新发布面板当前配置 / 3 校验本机协议并同步未知发布结果 / 0 返回", "0")
+	choice, err := m.read("1 重启 sing-box 实例 / 2 切换 sing-box 版本 (1.14.0~1.14.4) / 3 重新发布面板当前配置 / 4 校验本机协议并同步未知结果 / 0 返回", "0")
 	if err != nil || choice == "0" || choice == "" {
 		return err
 	}
@@ -363,6 +416,8 @@ func (m *menu) singboxMenu() error {
 	case "1":
 		return m.restartSingboxInstance()
 	case "2":
+		return m.switchSingboxVersion()
+	case "3":
 		if e := m.connect(); e != nil {
 			return e
 		}
@@ -379,7 +434,7 @@ func (m *menu) singboxMenu() error {
 			return nil
 		}
 		return m.submit("POST", "/instances/"+id+"/publish", object{"version": impact["version"]})
-	case "3":
+	case "4":
 		id, e := m.instance()
 		if e != nil {
 			return e

@@ -47,6 +47,7 @@ func ID() string {
 type ServiceObservation struct {
 	InstanceID string `json:"instance_id"`
 	State      string `json:"state"`
+	Version    string `json:"version,omitempty"`
 }
 
 type Inventory struct {
@@ -127,7 +128,7 @@ func (i Inventory) Valid() bool {
 		return false
 	}
 	for _, s := range i.Services {
-		if len(s.InstanceID) != 36 || (s.State != "running" && s.State != "stopped" && s.State != "failed" && s.State != "not_installed" && s.State != "unknown") {
+		if len(s.InstanceID) != 36 || len(s.Version) > 80 || (s.State != "running" && s.State != "stopped" && s.State != "failed" && s.State != "not_installed" && s.State != "unknown") {
 			return false
 		}
 	}

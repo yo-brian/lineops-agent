@@ -139,7 +139,7 @@ for sb in "$SCRIPT_DIR/lineops-singbox-linux-$ARCH" "$SCRIPT_DIR/lineops-singbox
   fi
 done
 
-if [[ ! -f /etc/lineops/bin/lineops-singbox ]]; then
+if [[ ! -f /etc/lineops/bin/lineops-singbox || "$UPGRADE" -eq 1 ]]; then
   TMP_SB="$TMP_DIR/lineops-singbox-linux-$ARCH"
   if curl --fail --silent --location --connect-timeout 15 --max-time 600 --retry 2 \
     "$RELEASE_URL/lineops-singbox-linux-$ARCH" -o "$TMP_SB" 2>/dev/null; then

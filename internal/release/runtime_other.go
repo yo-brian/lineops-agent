@@ -23,5 +23,6 @@ func (SystemdRuntime) Healthy(context.Context, RuntimeConfig, string, Model) err
 }
 func Initialize(context.Context, string, RuntimeConfig) error { return unsupported() }
 func ArmPolicy(context.Context, string, string) error         { return unsupported() }
-func isolatedNetwork(string) (bool, error)                    { return false, unsupported() }
-func processAlive(*os.Process) bool                           { return false }
+func isolatedNetwork(string) (bool, error)                                   { return false, unsupported() }
+func processAlive(*os.Process) bool                                          { return false }
+func (Engine) SwitchVersion(context.Context, string, string) (string, error) { return "", unsupported() }

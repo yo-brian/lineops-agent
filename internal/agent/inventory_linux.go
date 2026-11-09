@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"lineops-agent/internal/agentproto"
 	"os"
@@ -237,6 +238,14 @@ func observeManagedService(id string) agentproto.ServiceObservation {
 		result.State = "stopped"
 	case strings.Contains(value, "ActiveState=failed"):
 		result.State = "failed"
+	}
+	if rtBytes, err := os.ReadFile(filepath.Join("/etc/lineops/instances", id, "runtime.json")); err == nil && len(rtBytes) < 16384 {
+		var rt struct {
+			BinaryVersion string `json:"binary_version"`
+		}
+		if json.Unmarshal(rtBytes, &rt) == nil && len(rt.BinaryVersion) <= 80 {
+			result.Version = rt.BinaryVersion
+		}
 	}
 	return result
 }

@@ -508,6 +508,7 @@ func (c *Client) ResumeRotation(ctx context.Context) error {
 		return errors.New("invalid pending identity")
 	}
 	probe := *c
+	probe.StaticCredential = ""
 	probe.identity = candidate
 	var confirmed identity
 	status, err := probe.request(ctx, "POST", "/rotate/confirm", struct{}{}, &confirmed)

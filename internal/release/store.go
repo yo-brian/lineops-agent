@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 )
 
@@ -15,6 +16,9 @@ func safeDir(path string, create bool) error {
 	}
 	for p := path; ; p = filepath.Dir(p) {
 		s, e := os.Lstat(p)
+		if e == nil && runtime.GOOS == "darwin" && (p == "/var" || p == "/etc" || p == "/tmp") {
+			s, e = os.Stat(p)
+		}
 		if e == nil && (!s.IsDir() || s.Mode()&os.ModeSymlink != 0) {
 			return errors.New("managed path contains non-directory or symbolic link")
 		}

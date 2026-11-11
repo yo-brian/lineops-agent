@@ -1,4 +1,4 @@
-//go:build linux
+//go:build linux || darwin
 
 package release
 
@@ -6,6 +6,8 @@ import (
 	"context"
 	"errors"
 	"os"
+	"os/exec"
+	"strings"
 	"syscall"
 	"time"
 )
@@ -55,5 +57,10 @@ func readBootID(readFile func(string) ([]byte, error)) string {
 			return string(b)
 		}
 	}
-	return ""
+	if out, err := exec.Command("/usr/sbin/sysctl", "-n", "kern.bootsessionuuid").Output(); err == nil {
+		if s := strings.TrimSpace(string(out)); s != "" {
+			return s
+		}
+	}
+	return "darwin-boot"
 }

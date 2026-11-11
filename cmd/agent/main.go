@@ -92,8 +92,8 @@ func main() {
 		json.NewEncoder(os.Stdout).Encode(agent.Inventory())
 		return
 	}
-	if runtime.GOOS != "linux" {
-		log.Fatal("Agent service only supports Linux; Windows build is not an installation target")
+	if runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
+		log.Fatal("Agent service only supports Linux and macOS (darwin); Windows build is not an installation target")
 	}
 	c, err := agent.New(*panel, *state, *ca)
 	if err != nil {

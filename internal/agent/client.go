@@ -19,6 +19,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 )
@@ -55,6 +56,9 @@ func New(panel, stateDir, caFile string) (*Client, error) {
 	// Reject symbolic links in existing parents before creating protected state.
 	for path := filepath.Clean(stateDir); ; path = filepath.Dir(path) {
 		info, e := os.Lstat(path)
+		if e == nil && runtime.GOOS == "darwin" && (path == "/var" || path == "/etc" || path == "/tmp") {
+			info, e = os.Stat(path)
+		}
 		if e == nil && info.Mode()&os.ModeSymlink != 0 {
 			return nil, errors.New("state path contains symbolic link")
 		}

@@ -30,8 +30,8 @@ type menu struct {
 }
 
 func Run() error {
-	if runtime.GOOS != "linux" {
-		return errors.New("管理菜单仅支持 Linux VPS")
+	if runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
+		return errors.New("管理菜单仅支持 Linux 与 macOS (darwin)")
 	}
 	if !term.IsTerminal(int(os.Stdin.Fd())) {
 		return errors.New("请在交互式终端运行 lineops-agent menu；后台服务仍需指定 --panel 等参数")
@@ -282,16 +282,34 @@ func (m *menu) doctor() error {
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	activeOut, activeErr := exec.CommandContext(ctx, "systemctl", "is-active", "lineops-agent.service").Output()
-	enabledOut, _ := exec.CommandContext(ctx, "systemctl", "is-enabled", "lineops-agent.service").Output()
+	var activeErr error
+	var activeState, enabledState string
+	if runtime.GOOS == "darwin" {
+		out, err := exec.CommandContext(ctx, "/bin/launchctl", "print", "system/com.lineops.agent").Output()
+		activeErr = err
+		if err == nil && strings.Contains(string(out), "state = running") {
+			activeState = "active"
+		} else {
+			activeState = "inactive"
+		}
+		if _, err := os.Stat("/Library/LaunchDaemons/com.lineops.agent.plist"); err == nil {
+			enabledState = "enabled"
+		} else {
+			enabledState = "disabled"
+		}
+	} else {
+		activeOut, err := exec.CommandContext(ctx, "systemctl", "is-active", "lineops-agent.service").Output()
+		enabledOut, _ := exec.CommandContext(ctx, "systemctl", "is-enabled", "lineops-agent.service").Output()
+		activeErr = err
+		activeState = strings.TrimSpace(string(activeOut))
+		enabledState = strings.TrimSpace(string(enabledOut))
+	}
 	cancel()
-	activeState := strings.TrimSpace(string(activeOut))
-	enabledState := strings.TrimSpace(string(enabledOut))
 	if activeErr != nil || activeState != "active" {
-		fmt.Printf("[4/5] Agent 系统服务 (lineops-agent.service): [✗] 未运行 (状态=%s, 自启=%s)\n", clean(activeState), clean(enabledState))
+		fmt.Printf("[4/5] Agent 系统服务: [✗] 未运行 (状态=%s, 自启=%s)\n", clean(activeState), clean(enabledState))
 		failures++
 	} else {
-		fmt.Printf("[4/5] Agent 系统服务 (lineops-agent.service): [✓] 运行中 (状态=%s, 自启=%s)\n", clean(activeState), clean(enabledState))
+		fmt.Printf("[4/5] Agent 系统服务: [✓] 运行中 (状态=%s, 自启=%s)\n", clean(activeState), clean(enabledState))
 	}
 
 	ids := m.localInstances()
@@ -302,9 +320,23 @@ func (m *menu) doctor() error {
 		for _, id := range ids {
 			unit := "lineops-sing-box-" + id + ".service"
 			sctx, scancel := context.WithTimeout(context.Background(), 5*time.Second)
-			sOut, sErr := exec.CommandContext(sctx, "systemctl", "is-active", unit).Output()
+			var sErr error
+			var sState string
+			if runtime.GOOS == "darwin" {
+				unit = "com.lineops.sing-box." + id
+				sOut, err := exec.CommandContext(sctx, "/bin/launchctl", "print", "system/"+unit).Output()
+				sErr = err
+				if err == nil && strings.Contains(string(sOut), "state = running") {
+					sState = "active"
+				} else {
+					sState = "inactive"
+				}
+			} else {
+				sOut, err := exec.CommandContext(sctx, "systemctl", "is-active", unit).Output()
+				sErr = err
+				sState = strings.TrimSpace(string(sOut))
+			}
 			scancel()
-			sState := strings.TrimSpace(string(sOut))
 			if sErr != nil || sState != "active" {
 				fmt.Printf("[5/5] sing-box 实例 (%s): [✗] 服务未运行 (%s=%s)\n", id, unit, clean(sState))
 				failures++
@@ -339,7 +371,11 @@ func (m *menu) restartSingboxInstance() error {
 		return err
 	}
 	if err := m.connect(); err != nil {
-		if m.confirm("面板暂不可达，是否直接通过本机 systemd 重启 lineops-sing-box-" + id + ".service") {
+		if runtime.GOOS == "darwin" {
+			if m.confirm("面板暂不可达，是否直接通过本机 launchctl 重启 com.lineops.sing-box." + id) {
+				return run("/bin/launchctl", "kickstart", "-k", "system/com.lineops.sing-box."+id)
+			}
+		} else if m.confirm("面板暂不可达，是否直接通过本机 systemd 重启 lineops-sing-box-" + id + ".service") {
 			return run("systemctl", "restart", "lineops-sing-box-"+id+".service")
 		}
 		return err
@@ -495,7 +531,11 @@ func (m *menu) action(choice string) error {
 	case "1", "doctor":
 		return m.doctor()
 	case "2", "status":
-		_ = run("systemctl", "status", "lineops-agent", "lineops-sing-box-*", "--no-pager", "-l")
+		if runtime.GOOS == "darwin" {
+			_ = run("/bin/launchctl", "print", "system/com.lineops.agent")
+		} else {
+			_ = run("systemctl", "status", "lineops-agent", "lineops-sing-box-*", "--no-pager", "-l")
+		}
 		ids := m.localInstances()
 		if len(ids) == 0 {
 			return nil
@@ -525,11 +565,17 @@ func (m *menu) action(choice string) error {
 		showImpact(v)
 		return nil
 	case "3", "log":
+		if runtime.GOOS == "darwin" {
+			return run("tail", "-n", "100", "/var/log/lineops-agent.log")
+		}
 		return run("journalctl", "-u", "lineops-agent", "--since", "30 minutes ago", "-n", "100", "--no-pager")
 	case "4", "singbox-log":
 		id, err := m.instance()
 		if err != nil {
 			return err
+		}
+		if runtime.GOOS == "darwin" {
+			return run("tail", "-n", "100", "/var/log/lineops-sing-box-"+id+".log")
 		}
 		return run("journalctl", "-u", "lineops-sing-box-"+id+".service", "--since", "30 minutes ago", "-n", "100", "--no-pager")
 	case "5", "16", "config":

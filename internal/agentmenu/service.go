@@ -18,8 +18,8 @@ import (
 // Command exposes only fixed administrative actions; it never accepts a unit
 // name, shell fragment, configuration path, or remote program from the caller.
 func Command(name string) error {
-	if runtime.GOOS != "linux" || os.Geteuid() != 0 {
-		return errors.New("请在 Linux VPS 上使用 sudo lineops-agent")
+	if (runtime.GOOS != "linux" && runtime.GOOS != "darwin") || os.Geteuid() != 0 {
+		return errors.New("请在 Linux 或 macOS 上使用 sudo lineops-agent")
 	}
 	m := &menu{in: bufio.NewReader(os.Stdin)}
 	defer func() {
@@ -70,7 +70,13 @@ func (m *menu) printHeader() {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	agentState := "unknown"
-	if out, err := exec.CommandContext(ctx, "systemctl", "is-active", "lineops-agent.service").Output(); err == nil {
+	if runtime.GOOS == "darwin" {
+		if out, err := exec.CommandContext(ctx, "/bin/launchctl", "print", "system/com.lineops.agent").Output(); err == nil && strings.Contains(string(out), "state = running") {
+			agentState = "active"
+		} else {
+			agentState = "inactive"
+		}
+	} else if out, err := exec.CommandContext(ctx, "systemctl", "is-active", "lineops-agent.service").Output(); err == nil {
 		agentState = strings.TrimSpace(string(out))
 	}
 	fmt.Printf("\n================ LineOps VPS 管理 ================\n配置文件: %s | 面板: %s\n绑定标识: %s | Agent 状态: %s\n==================================================\n", agentconfig.DefaultFile, clean(panelURL), clean(bindingID), clean(agentState))
@@ -137,6 +143,12 @@ func (m *menu) configureConfigYML() error {
 	_ = os.Remove(filepath.Join(cfg.Paths.AgentStateDir, "enrollment-pending.json"))
 	fmt.Println("已写入", agentconfig.DefaultFile)
 	if m.confirm("是否立即重启 lineops-agent 服务以连接面板") {
+		if runtime.GOOS == "darwin" {
+			plist := "/Library/LaunchDaemons/com.lineops.agent.plist"
+			_ = exec.Command("/bin/launchctl", "bootout", "system", plist).Run()
+			_ = exec.Command("/bin/launchctl", "bootstrap", "system", plist).Run()
+			return run("/bin/launchctl", "kickstart", "-k", "system/com.lineops.agent")
+		}
 		return run("systemctl", "restart", "lineops-agent.service")
 	}
 	return nil
@@ -161,6 +173,20 @@ func (m *menu) controlAgent(operation string) error {
 	fmt.Println("仅操作 lineops-agent 服务；不删除身份、不修改 sing-box 配置。停止后面板收不到心跳，也无法下发任务。开机自启设置不改变当前运行状态。")
 	if !m.confirm("执行 Agent 服务操作：" + operation) {
 		return nil
+	}
+	if runtime.GOOS == "darwin" {
+		plist := "/Library/LaunchDaemons/com.lineops.agent.plist"
+		switch operation {
+		case "start", "enable":
+			_ = exec.Command("/bin/launchctl", "bootstrap", "system", plist).Run()
+			return run("/bin/launchctl", "kickstart", "-k", "system/com.lineops.agent")
+		case "stop", "disable":
+			return run("/bin/launchctl", "bootout", "system", plist)
+		case "restart":
+			_ = exec.Command("/bin/launchctl", "bootout", "system", plist).Run()
+			_ = exec.Command("/bin/launchctl", "bootstrap", "system", plist).Run()
+			return run("/bin/launchctl", "kickstart", "-k", "system/com.lineops.agent")
+		}
 	}
 	if err := run("systemctl", operation, "lineops-agent.service"); err != nil {
 		return err

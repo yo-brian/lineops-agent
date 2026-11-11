@@ -47,7 +47,7 @@ func Run() error {
 	}()
 	for {
 		m.printHeader()
-		fmt.Println("── 状态与诊断 ──\n1. 一键全面自检 (配置 / 面板通信 / 服务 / 节点协议握手)\n2. 查看本机服务与实例状态\n3. 查看 Agent 实时日志\n4. 查看 sing-box 实时日志\n── 配置与服务控制 ──\n5. 配置面板通信 (config.yml: 网址 / API Key / VPS ID)\n6. Agent 服务管理 (启动 / 停止 / 重启 / 开机自启)\n7. sing-box 实例管理 (重启 / 切换版本 / 重新同步)\n── 系统与维护 ──\n8. BBR 加速设置\n9. 升级、解绑与卸载维护\n0. 退出")
+		fmt.Println("── 状态与诊断 ──\n1. 一键全面自检 (配置 / 面板通信 / 服务 / 节点协议握手)\n2. 查看本机服务与实例状态\n3. 查看 Agent 实时日志\n4. 查看 sing-box 实时日志\n── 配置与服务控制 ──\n5. 配置面板通信 (config.yml: 网址 / API Key / VPS ID)\n6. Agent 服务管理 (启动 / 停止 / 重启 / 开机自启)\n7. sing-box 实例管理 (重启 / 切换版本 / 重新同步)\n10. FRP 内网穿透管理 (自动下载 / 配置 frps 服务端 & frpc 客户端)\n── 系统与维护 ──\n8. BBR 加速设置\n9. 升级、解绑与卸载维护\n0. 退出")
 		choice, err := m.read("请选择", "")
 		if err != nil {
 			return err
@@ -588,6 +588,8 @@ func (m *menu) action(choice string) error {
 		return m.bbr()
 	case "9":
 		return m.maintainMenu()
+	case "10", "frp":
+		return m.frpMenu()
 	case "11", "singbox-restart":
 		return m.restartSingboxInstance()
 	case "14":

@@ -300,6 +300,9 @@ func (c *Client) Heartbeat(ctx context.Context) error {
 		i.ReleaseExecutor = err == nil
 		if i.ReleaseExecutor {
 			i.ReleaseTemplates = templates
+			i.FRPLifecycle = true
+			frpStatus := release.ObserveFRP(agentconfig.NewPaths())
+			i.FRPStatus = &frpStatus
 		}
 		cancel()
 		if i.ReleaseExecutor {
@@ -402,6 +405,7 @@ type receipt struct {
 	Lifecycle            *release.LifecycleResult      `json:"lifecycle,omitempty"`
 	LifecycleObservation *release.LifecycleObservation `json:"lifecycle_observation,omitempty"`
 	Release              *release.State                `json:"release,omitempty"`
+	FRP                  *release.FRPResult            `json:"frp,omitempty"`
 }
 
 func (c *Client) Poll(ctx context.Context) error {
@@ -422,12 +426,15 @@ func (c *Client) Poll(ctx context.Context) error {
 	if err != nil || status == 204 {
 		return err
 	}
-	if (cmd.Kind != "agent_logs" && cmd.Kind != "inventory" && cmd.Kind != "release" && cmd.Kind != "release_reconcile" && cmd.Kind != "singbox_reconcile" && cmd.Kind != "install_singbox" && cmd.Kind != "uninstall_singbox" && cmd.Kind != "restart_singbox") || len(cmd.TaskID) != 36 || strings.ContainsAny(cmd.TaskID, "/\\.") || cmd.Fencing < 1 || time.Now().After(cmd.Deadline) {
+	if (cmd.Kind != "agent_logs" && cmd.Kind != "inventory" && cmd.Kind != "release" && cmd.Kind != "release_reconcile" && cmd.Kind != "singbox_reconcile" && cmd.Kind != "install_singbox" && cmd.Kind != "uninstall_singbox" && cmd.Kind != "restart_singbox" && cmd.Kind != "configure_frp" && cmd.Kind != "restart_frp" && cmd.Kind != "uninstall_frp") || len(cmd.TaskID) != 36 || strings.ContainsAny(cmd.TaskID, "/\\.") || cmd.Fencing < 1 || time.Now().After(cmd.Deadline) {
 		return errors.New("unsupported or expired command")
 	}
 	if cmd.Kind == "agent_logs" {
 		_, err := c.request(ctx, "POST", "/logs", map[string]any{"agent_logs": CollectAgentLogs()}, nil)
 		return err
+	}
+	if cmd.Kind == "configure_frp" || cmd.Kind == "restart_frp" || cmd.Kind == "uninstall_frp" {
+		return c.executeFRP(ctx, cmd)
 	}
 	if cmd.Kind == "singbox_reconcile" {
 		return c.executeLifecycleReconcile(ctx, cmd)
@@ -568,7 +575,7 @@ func (c *Client) replayReceipts(ctx context.Context) error {
 			return err
 		}
 		var r receipt
-		if json.Unmarshal(data, &r) != nil || r.TaskID == "" || (r.Release == nil && r.Lifecycle == nil && r.LifecycleObservation == nil && !r.Inventory.Valid()) || (r.LifecycleObservation != nil && (!r.LifecycleObservation.Valid() || r.LifecycleObservation.TaskID != r.TaskID || r.LifecycleObservation.Fencing != uint64(r.Fencing))) {
+		if json.Unmarshal(data, &r) != nil || r.TaskID == "" || (r.Release == nil && r.Lifecycle == nil && r.LifecycleObservation == nil && r.FRP == nil && !r.Inventory.Valid()) || (r.LifecycleObservation != nil && (!r.LifecycleObservation.Valid() || r.LifecycleObservation.TaskID != r.TaskID || r.LifecycleObservation.Fencing != uint64(r.Fencing))) || (r.FRP != nil && (!r.FRP.Valid() || r.FRP.TaskID != r.TaskID || r.FRP.Fencing != uint64(r.Fencing))) {
 			return errors.New("invalid stored receipt")
 		}
 		if err = c.submitReceipt(ctx, e.Name(), r); err != nil {

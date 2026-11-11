@@ -22,14 +22,19 @@ func (c *Client) sendHeartbeatPage(ctx context.Context, inventory agentproto.Inv
 	optimized := payload.Delta != nil || c.heartbeatGzip
 	var ack agentproto.HeartbeatAck
 	code, err := c.request(ctx, "POST", "/heartbeat", payload, &ack)
-	if err != nil && optimized && (code == 400 || code == 409 || code == 415) {
+	if err != nil && (optimized || inventory.FRPLifecycle || inventory.FRPStatus != nil) && (code == 400 || code == 409 || code == 415) {
 		// Covers lost acknowledgements, server restore and mixed-version rollout.
 		c.heartbeatGzip = false
 		c.heartbeatDelta = false
 		c.acknowledgedTraffic = nil
 		c.cachedInstancesValid = false
 		ack = agentproto.HeartbeatAck{}
-		full := agentproto.Heartbeat{Inventory: inventory, InstancePartial: partial, InstanceTrafficObserved: payload.InstanceTrafficObserved}
+		fallbackInv := inventory
+		if code == 400 {
+			fallbackInv.FRPLifecycle = false
+			fallbackInv.FRPStatus = nil
+		}
+		full := agentproto.Heartbeat{Inventory: fallbackInv, InstancePartial: partial, InstanceTrafficObserved: payload.InstanceTrafficObserved}
 		_, err = c.request(ctx, "POST", "/heartbeat", full, &ack)
 	}
 	if err != nil {

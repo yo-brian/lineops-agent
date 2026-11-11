@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-var Version = "0.10.29-dev"
+var Version = "0.10.32-dev"
 
 type Lease struct {
 	TaskID       string          `json:"task_id"`
@@ -51,6 +51,8 @@ type ServiceObservation struct {
 }
 
 type Inventory struct {
+	FRPLifecycle       bool                 `json:"frp_lifecycle,omitempty"`
+	FRPStatus          *release.FRPStatus   `json:"frp_status,omitempty"`
 	SingBoxReconcile   bool                 `json:"singbox_reconcile"`
 	SingBoxRestart     bool                 `json:"singbox_restart"`
 	NodeTrafficErrors  map[string]string    `json:"node_traffic_errors,omitempty"`
@@ -90,6 +92,9 @@ type Inventory struct {
 }
 
 func (i Inventory) Valid() bool {
+	if i.FRPStatus != nil && !i.FRPStatus.Valid() {
+		return false
+	}
 	if len(i.AgentLogs) > 100 || len(i.SingboxLogs) > 100 {
 		return false
 	}

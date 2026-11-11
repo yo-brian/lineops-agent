@@ -210,6 +210,12 @@ func (c Config) HasStaticCredential() bool {
 }
 func (c Config) JSON() ([]byte, error)     { return json.Marshal(c.Redacted()) }
 func (p Paths) RecoveryBinary() string     { return path.Join(p.AgentBinDir, "lineops-recovery") }
+func (p Paths) FRPDir() string {
+	if p.SingboxDir != "" {
+		return path.Join(path.Dir(p.SingboxDir), "frp")
+	}
+	return "/etc/lineops/frp"
+}
 func (c Config) CheckIdentity(vps string) error {
 	if c.Binding.VPSID != "" && c.Binding.VPSID != vps {
 		return fmt.Errorf("config VPS binding does not match registered identity")

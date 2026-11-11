@@ -78,6 +78,7 @@ install -d -m 0755 -o root -g "$ROOT_GROUP" \
   /etc/lineops \
   /etc/lineops/bin \
   /etc/lineops/sing-box \
+  /etc/lineops/frp \
   /etc/lineops/state \
   /etc/lineops/backups \
   /usr/local/bin
@@ -96,7 +97,7 @@ if [[ "$FORCE_CLEAN" -eq 1 ]]; then
   echo "Cleaning LineOps state and resetting /etc/lineops ..."
   if [[ "$OS_NAME" == "darwin" ]]; then
     /bin/launchctl bootout system /Library/LaunchDaemons/com.lineops.agent.plist >/dev/null 2>&1 || true
-    for plist_file in /Library/LaunchDaemons/com.lineops.sing-box.*.plist; do
+    for plist_file in /Library/LaunchDaemons/com.lineops.sing-box.*.plist /Library/LaunchDaemons/com.lineops.frps.plist /Library/LaunchDaemons/com.lineops.frpc.plist; do
       [[ -e "$plist_file" ]] || continue
       /bin/launchctl bootout system "$plist_file" >/dev/null 2>&1 || true
       rm -f "$plist_file"
@@ -105,6 +106,8 @@ if [[ "$FORCE_CLEAN" -eq 1 ]]; then
     systemctl stop lineops-agent.service >/dev/null 2>&1 || true
     for unit_file in \
       /etc/systemd/system/lineops-sing-box-*.service \
+      /etc/systemd/system/lineops-frps.service \
+      /etc/systemd/system/lineops-frpc.service \
       /etc/systemd/system/lineops-policy-*.service \
       /etc/systemd/system/lineops-policy-*.timer \
       /etc/systemd/system/lineops-singbox@*.service; do
@@ -115,7 +118,7 @@ if [[ "$FORCE_CLEAN" -eq 1 ]]; then
     done
   fi
 
-  rm -rf /etc/lineops/instances/* /etc/lineops/sing-box/* /etc/lineops/state/lifecycle/* /etc/lineops/state/agent/*
+  rm -rf /etc/lineops/instances/* /etc/lineops/sing-box/* /etc/lineops/frp/* /etc/lineops/state/lifecycle/* /etc/lineops/state/agent/*
   for owned_dir in /etc/lineops /etc/lineops/bin /etc/lineops/state/agent; do
     printf 'lineops-agent-v1\n' > "$owned_dir/.lineops-owned"
     chmod 0600 "$owned_dir/.lineops-owned"

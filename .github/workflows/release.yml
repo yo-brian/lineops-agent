@@ -93,10 +93,14 @@ jobs:
           for os in linux darwin; do
             for arch in amd64 arm64; do
               cp "$GITHUB_WORKSPACE/bin/lineops-singbox-1.14.4-${os}-${arch}" "$GITHUB_WORKSPACE/bin/lineops-singbox-${os}-${arch}"
+              curl -fsSL "https://github.com/fatedier/frp/releases/download/v0.61.1/frp_0.61.1_${os}_${arch}.tar.gz" -o "/tmp/frp_${os}_${arch}.tar.gz"
+              tar -xzf "/tmp/frp_${os}_${arch}.tar.gz" -C /tmp
+              install -m 0755 "/tmp/frp_0.61.1_${os}_${arch}/frps" "$GITHUB_WORKSPACE/bin/lineops-frps-${os}-${arch}"
+              install -m 0755 "/tmp/frp_0.61.1_${os}_${arch}/frpc" "$GITHUB_WORKSPACE/bin/lineops-frpc-${os}-${arch}"
             done
           done
           cp scripts/install.sh bin/install.sh
-          (cd bin && sha256sum lineops-agent-linux-* lineops-agent-darwin-* lineops-singbox-linux-* lineops-singbox-darwin-* lineops-singbox-*-linux-* lineops-singbox-*-darwin-* install.sh > SHA256SUMS)
+          (cd bin && sha256sum lineops-agent-linux-* lineops-agent-darwin-* lineops-singbox-linux-* lineops-singbox-darwin-* lineops-singbox-*-linux-* lineops-singbox-*-darwin-* lineops-frps-* lineops-frpc-* install.sh > SHA256SUMS)
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -106,6 +110,15 @@ jobs:
           prerelease: false
           make_latest: true
           generate_release_notes: true
+          body: |
+            ## 新增功能说明 (What's New)
+
+            ### 1. 受管 FRP 内网穿透与端口转发 (`frps` 服务端 / `frpc` 客户端)
+            - **自动下载与跨平台守护**：Agent 新增内置 FRP 生命周期管理引擎，支持在 **Linux (`systemd`)** 与 **macOS (`launchd`，含 Apple Silicon M 系列芯片)** 上按需自动下载、配置并守护 `frps`（公网中转服务端）与 `frpc`（内网穿透客户端）。
+            - **双协议与断线重连**：支持 `tcp`、`udp`、`tcp+udp` 端口转发规则渲染，默认开启 `loginFailExit = false`，宽带重拨或短暂断网后自动重连。
+            - **面板远程下发与心跳观测**：支持接收面板下发的 `configure_frp`、`restart_frp`、`uninstall_frp` 任务，并通过心跳实时上报 `frps` / `frpc` 运行状态与版本号（内置旧版面板滚动升级兼容回退）。
+            - **终端交互菜单 (`sudo lineops`)**：新增菜单项 **`10. FRP 内网穿透管理 (frps 服务端 / frpc 客户端)`**，支持在命令行直接查看状态、一键配置、重启或卸载清理。
+            - **预打包二进制产物**：Release 现已同步附带 `lineops-frps-{linux,darwin}-{amd64,arm64}` 与 `lineops-frpc-{linux,darwin}-{amd64,arm64}`（基于 FRP v0.61.1）。
           files: |
             bin/lineops-agent-linux-amd64
             bin/lineops-agent-linux-arm64
@@ -117,5 +130,7 @@ jobs:
             bin/lineops-singbox-darwin-amd64
             bin/lineops-singbox-*-linux-*
             bin/lineops-singbox-*-darwin-*
+            bin/lineops-frps-*
+            bin/lineops-frpc-*
             bin/install.sh
             bin/SHA256SUMS

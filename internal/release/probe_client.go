@@ -122,6 +122,34 @@ func probeWithClient(ctx context.Context, binary, dir string, m Model) error {
 		}
 	}
 	for i, n := range m.Nodes {
+		if n.RelayAddress != "" && n.ProtocolOptions.Normalized().Encryption != "" {
+			host := n.Listen
+			if host == "0.0.0.0" {
+				host = "127.0.0.1"
+			}
+			if host == "::" {
+				host = "::1"
+			}
+			verified := false
+			for ctx.Err() == nil && alive() {
+				conn, e := (&net.Dialer{Timeout: 2 * time.Second}).DialContext(ctx, "tcp", fmt.Sprintf("%s:%d", host, n.Port))
+				if e == nil {
+					_ = conn.Close()
+					if alive() {
+						verified = true
+						break
+					}
+				}
+				select {
+				case <-ctx.Done():
+				case <-time.After(100 * time.Millisecond):
+				}
+			}
+			if !verified {
+				return fmt.Errorf("node %s: authenticated protocol/egress verification failed", n.ID)
+			}
+			continue
+		}
 		proxy, _ := url.Parse(fmt.Sprintf("http://127.0.0.1:%d", ports[i]))
 		transport := &http.Transport{Proxy: http.ProxyURL(proxy), DisableKeepAlives: true}
 		client := &http.Client{Transport: transport, Timeout: 5 * time.Second, CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }}

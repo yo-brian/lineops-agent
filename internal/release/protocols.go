@@ -25,6 +25,7 @@ type ProtocolOptions struct {
 	Security                     string `json:"security,omitempty"`
 	Transport                    string `json:"transport,omitempty"`
 	Flow                         string `json:"flow,omitempty"`
+	Encryption                   string `json:"encryption,omitempty"`
 	TransportPath                string `json:"transport_path,omitempty"`
 	TransportHost                string `json:"transport_host,omitempty"`
 	GRPCServiceName              string `json:"grpc_service_name,omitempty"`
@@ -41,6 +42,9 @@ func (o ProtocolOptions) Normalized() ProtocolOptions {
 	if o.Protocol == "" {
 		o.Protocol = "vless"
 	}
+	if o.Encryption == "none" {
+		o.Encryption = ""
+	}
 	if o.Transport == "" {
 		if o.Protocol == "hysteria2" {
 			o.Transport = "quic"
@@ -49,7 +53,7 @@ func (o ProtocolOptions) Normalized() ProtocolOptions {
 		}
 	}
 	if o.Security == "" {
-		if o.Protocol == "shadowsocks" {
+		if o.Protocol == "shadowsocks" || (o.Protocol == "vless" && o.Encryption != "") {
 			o.Security = "none"
 		} else {
 			o.Security = "tls"
@@ -61,6 +65,7 @@ func (o ProtocolOptions) Normalized() ProtocolOptions {
 var serverNamePattern = regexp.MustCompile(`^[a-zA-Z0-9](?:[a-zA-Z0-9.-]{0,251}[a-zA-Z0-9])?$`)
 var grpcNamePattern = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,128}$`)
 var shortIDPattern = regexp.MustCompile(`^[0-9a-f]{16}$`)
+var vlessEncryptionPattern = regexp.MustCompile(`^mlkem768x25519plus\.(?:native|xorpub|random)\.[A-Za-z0-9_.-]{1,512}$`)
 
 func (o ProtocolOptions) Validate() error {
 	return o.validate(o.RelayAddress != "" || o.RelayPort != 0)
@@ -79,8 +84,8 @@ func (o ProtocolOptions) validate(clientOnly bool) error {
 	}
 	switch o.Protocol {
 	case "vless":
-		if o.Security != "tls" && o.Security != "reality" {
-			return errors.New("VLESS 需要 TLS 或 Reality")
+		if o.Security != "tls" && o.Security != "reality" && o.Security != "none" {
+			return errors.New("VLESS 需要 TLS、Reality 或无外层加密 (none)")
 		}
 	case "vmess", "trojan":
 		if o.Security != "tls" {
@@ -101,8 +106,11 @@ func (o ProtocolOptions) validate(clientOnly bool) error {
 	default:
 		return errors.New("不支持的节点协议")
 	}
-	if o.Flow != "" && (o.Protocol != "vless" || o.Flow != "xtls-rprx-vision" || o.Transport != "tcp") {
+	if o.Flow != "" && (o.Protocol != "vless" || o.Flow != "xtls-rprx-vision" || o.Transport != "tcp" || (o.Security == "none" && o.Encryption == "")) {
 		return errors.New("Vision 仅支持 VLESS 的 TCP 传输")
+	}
+	if o.Encryption != "" && (o.Protocol != "vless" || !vlessEncryptionPattern.MatchString(o.Encryption)) {
+		return errors.New("不支持的 VLESS encryption 参数")
 	}
 	switch o.Transport {
 	case "tcp":
@@ -445,6 +453,9 @@ func MihomoProxy(n Node, address string) map[string]any {
 	}
 	if o.Flow != "" {
 		out["flow"] = o.Flow
+	}
+	if o.Encryption != "" {
+		out["encryption"] = o.Encryption
 	}
 	if o.Security != "none" {
 		if o.Protocol != "hysteria2" {

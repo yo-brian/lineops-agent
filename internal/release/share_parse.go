@@ -87,8 +87,10 @@ func ParseShareURI(raw string) (Node, string, error) {
 				return fail()
 			}
 		}
-		if q.Get("encryption") != "" && q.Get("encryption") != "none" {
-			return fail()
+		if enc := q.Get("encryption"); enc != "" && enc != "none" {
+			if u.Scheme != "vless" || !vlessEncryptionPattern.MatchString(enc) {
+				return fail()
+			}
 		}
 		if q.Get("fp") != "" && q.Get("fp") != "chrome" {
 			return fail()
@@ -100,7 +102,7 @@ func ParseShareURI(raw string) (Node, string, error) {
 		if scheme == "hy2" {
 			scheme = "hysteria2"
 		}
-		n.ProtocolOptions = ProtocolOptions{Protocol: scheme, Security: q.Get("security"), Transport: q.Get("type"), Flow: q.Get("flow"), TransportPath: q.Get("path"), TransportHost: q.Get("host"), GRPCServiceName: q.Get("serviceName"), RealityPublicKey: q.Get("pbk"), RealityShortID: q.Get("sid")}
+		n.ProtocolOptions = ProtocolOptions{Protocol: scheme, Security: q.Get("security"), Transport: q.Get("type"), Flow: q.Get("flow"), Encryption: q.Get("encryption"), TransportPath: q.Get("path"), TransportHost: q.Get("host"), GRPCServiceName: q.Get("serviceName"), RealityPublicKey: q.Get("pbk"), RealityShortID: q.Get("sid")}.Normalized()
 		n.ServerName = q.Get("sni")
 		if q.Has("spx") || q.Has("support-x25519mlkem768") {
 			if scheme != "vless" || n.Security != "reality" {
@@ -114,7 +116,7 @@ func ParseShareURI(raw string) (Node, string, error) {
 				n.RealitySupportX25519MLKEM768 = q.Get("support-x25519mlkem768") == "true"
 			}
 		}
-		if n.ServerName == "" {
+		if n.ServerName == "" && n.Security != "none" {
 			n.ServerName = host
 		}
 		switch scheme {

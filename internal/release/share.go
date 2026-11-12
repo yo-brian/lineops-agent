@@ -41,10 +41,17 @@ func ShareURI(n Node, address, name string) string {
 		u.RawQuery = url.Values{"sni": {n.ServerName}}.Encode()
 		return u.String()
 	}
-	q := url.Values{"security": {o.Security}, "type": {o.Transport}, "sni": {n.ServerName}}
+	q := url.Values{"security": {o.Security}, "type": {o.Transport}}
+	if n.ServerName != "" {
+		q.Set("sni", n.ServerName)
+	}
 	if o.Protocol == "vless" {
 		u.User = url.User(n.UUID)
-		q.Set("encryption", "none")
+		if o.Encryption != "" {
+			q.Set("encryption", o.Encryption)
+		} else {
+			q.Set("encryption", "none")
+		}
 	} else {
 		u.User = url.User(n.Password)
 	}

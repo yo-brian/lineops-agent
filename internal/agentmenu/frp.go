@@ -18,7 +18,7 @@ func (m *menu) frpMenu() error {
 	fmt.Printf("  二进制安装: %v (版本: %s)\n", st.Installed, fallbackStr(st.Version, "未安装"))
 	fmt.Printf("  服务端 (frps): 启用=%v, 状态=%s, 监听端口=%d\n", st.ServerEnabled, st.ServerState, st.ServerBindPort)
 	fmt.Printf("  客户端 (frpc): 启用=%v, 状态=%s, 远端=%s:%d, 映射规则=%d 条\n", st.ClientEnabled, st.ClientState, fallbackStr(st.ClientServerAddr, "—"), st.ClientServerPort, st.ProxyCount)
-	choice, err := m.read("1 配置并启动 FRP 服务端 (frps, 公网VPS用) / 2 配置并启动 FRP 客户端 (frpc, 内网Mac/家宽用) / 3 重启 FRP / 4 查看日志 / 5 卸载清理 FRP / 0 返回", "0")
+	choice, err := m.read("1 配置并启动 FRP 服务端 (frps, 公网VPS用) / 2 配置并启动 FRP 客户端 (frpc, 内网 Mac mini / Debian 系统用) / 3 重启 FRP / 4 查看日志 / 5 卸载清理 FRP / 0 返回", "0")
 	if err != nil || choice == "0" || choice == "" {
 		return err
 	}

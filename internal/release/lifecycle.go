@@ -6,23 +6,14 @@ import (
 )
 
 // Lifecycle commands contain identity and intent, never shell, paths or URLs.
-const DefaultSingboxVersion = "1.14.4"
+const DefaultSingboxVersion = "1.14.0"
 
 var SupportedSingboxVersions = []string{
-	"1.14.4",
-	"1.14.3",
-	"1.14.2",
-	"1.14.1",
-	"1.14.0",
+	DefaultSingboxVersion,
 }
 
 func SupportedSingboxVersion(v string) bool {
-	for _, s := range SupportedSingboxVersions {
-		if s == v {
-			return true
-		}
-	}
-	return false
+	return v == DefaultSingboxVersion
 }
 
 type LifecycleRequest struct {

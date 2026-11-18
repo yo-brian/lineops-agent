@@ -10,7 +10,21 @@ func TestLifecycleIdentityAndReceipt(t *testing.T) {
 	if !r.Valid() {
 		t.Fatal("valid request rejected")
 	}
-	for _, mutate := range []func(*LifecycleRequest){func(x *LifecycleRequest) { x.InstanceID = "../../etc" }, func(x *LifecycleRequest) { x.Kind = "shell" }, func(x *LifecycleRequest) { x.Fencing = 0 }, func(x *LifecycleRequest) { x.Fencing = 1 << 63 }, func(x *LifecycleRequest) { x.Epoch = "" }} {
+	withSupportedVer := r
+	withSupportedVer.TargetVersion = "1.14.0"
+	if !withSupportedVer.Valid() {
+		t.Fatal("1.14.0 target version rejected")
+	}
+	for _, mutate := range []func(*LifecycleRequest){
+		func(x *LifecycleRequest) { x.InstanceID = "../../etc" },
+		func(x *LifecycleRequest) { x.Kind = "shell" },
+		func(x *LifecycleRequest) { x.Fencing = 0 },
+		func(x *LifecycleRequest) { x.Fencing = 1 << 63 },
+		func(x *LifecycleRequest) { x.Epoch = "" },
+		func(x *LifecycleRequest) { x.TargetVersion = "1.14.4" },
+		func(x *LifecycleRequest) { x.TargetVersion = "1.14.1" },
+		func(x *LifecycleRequest) { x.TargetVersion = "1.13.0" },
+	} {
 		bad := r
 		mutate(&bad)
 		if bad.Valid() {

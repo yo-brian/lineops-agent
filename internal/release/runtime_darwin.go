@@ -70,8 +70,8 @@ func serviceContent(r RuntimeConfig, dir string) string {
 `, darwinLabel(r), r.Binary, dir, dir, r.InstanceID, r.InstanceID)
 }
 
-func runtimeValid(ctx context.Context, r RuntimeConfig) error {
-	if !identifier.MatchString(r.InstanceID) || !identifier.MatchString(r.Epoch) || !identifier.MatchString(r.ServiceUser) || r.ServiceUser == "root" || !SupportedSingboxVersion(r.BinaryVersion) {
+func runtimeFilesValid(r RuntimeConfig) error {
+	if !identifier.MatchString(r.InstanceID) || !identifier.MatchString(r.Epoch) || !identifier.MatchString(r.ServiceUser) || r.ServiceUser == "root" {
 		return errors.New("unsupported runtime registration")
 	}
 	for _, p := range []string{r.Binary, r.RecoveryBinary} {
@@ -83,9 +83,22 @@ func runtimeValid(ctx context.Context, r RuntimeConfig) error {
 	if err != nil || digest(b) != r.BinarySHA256 {
 		return errors.New("registered sing-box binary drift")
 	}
+	return nil
+}
+
+func runtimeValid(ctx context.Context, r RuntimeConfig) error {
+	if !SupportedSingboxVersion(r.BinaryVersion) {
+		return errors.New("unsupported runtime registration")
+	}
+	if err := runtimeFilesValid(r); err != nil {
+		return err
+	}
 	out, err := exec.CommandContext(ctx, r.Binary, "version").Output()
-	if err != nil || len(out) == 0 {
+	if err != nil || !outputHasVersion(out, r.BinaryVersion) {
 		return errors.New("unverified sing-box binary version")
+	}
+	if r.TrafficAPI && !strings.Contains(string(out), "with_v2ray_api") {
+		return errors.New("singbox_stats_build_required")
 	}
 	return nil
 }

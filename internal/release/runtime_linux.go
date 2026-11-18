@@ -33,8 +33,8 @@ func command(ctx context.Context, name string, args ...string) error {
 	}
 	return nil
 }
-func runtimeValid(ctx context.Context, r RuntimeConfig) error {
-	if !identifier.MatchString(r.InstanceID) || !identifier.MatchString(r.Epoch) || !identifier.MatchString(r.ServiceUser) || r.ServiceUser == "root" || !SupportedSingboxVersion(r.BinaryVersion) {
+func runtimeFilesValid(r RuntimeConfig) error {
+	if !identifier.MatchString(r.InstanceID) || !identifier.MatchString(r.Epoch) || !identifier.MatchString(r.ServiceUser) || r.ServiceUser == "root" {
 		return errors.New("unsupported runtime registration")
 	}
 	for _, p := range []string{r.Binary, r.RecoveryBinary} {
@@ -45,6 +45,15 @@ func runtimeValid(ctx context.Context, r RuntimeConfig) error {
 	b, err := readBinary(r.Binary)
 	if err != nil || digest(b) != r.BinarySHA256 {
 		return errors.New("registered sing-box binary drift")
+	}
+	return nil
+}
+func runtimeValid(ctx context.Context, r RuntimeConfig) error {
+	if !SupportedSingboxVersion(r.BinaryVersion) {
+		return errors.New("unsupported runtime registration")
+	}
+	if err := runtimeFilesValid(r); err != nil {
+		return err
 	}
 	out, err := exec.CommandContext(ctx, r.Binary, "version").Output()
 	if err != nil || !outputHasVersion(out, r.BinaryVersion) {

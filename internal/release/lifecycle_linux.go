@@ -17,21 +17,13 @@ import (
 )
 
 func matchSupportedVersion(out []byte, targetVersion string) string {
-	if !strings.Contains(string(out), "with_v2ray_api") {
+	if targetVersion != "" && !SupportedSingboxVersion(targetVersion) {
 		return ""
 	}
-	if targetVersion != "" {
-		if SupportedSingboxVersion(targetVersion) && outputHasVersion(out, targetVersion) {
-			return targetVersion
-		}
+	if !strings.Contains(string(out), "with_v2ray_api") || !outputHasVersion(out, DefaultSingboxVersion) {
 		return ""
 	}
-	for _, v := range SupportedSingboxVersions {
-		if outputHasVersion(out, v) {
-			return v
-		}
-	}
-	return ""
+	return DefaultSingboxVersion
 }
 
 func (e Engine) lifecycleBinary(ctx context.Context, targetVersion string) ([]byte, string, error) {
@@ -39,20 +31,12 @@ func (e Engine) lifecycleBinary(ctx context.Context, targetVersion string) ([]by
 		return nil, "", errors.New("unsupported_singbox_version")
 	}
 	binDir := e.ManagedPaths().AgentBinDir
-	var candidates []string
-	if targetVersion != "" {
-		candidates = append(candidates, filepath.Join(binDir, "lineops-singbox-"+targetVersion))
-	} else {
-		for _, v := range SupportedSingboxVersions {
-			candidates = append(candidates, filepath.Join(binDir, "lineops-singbox-"+v))
-		}
-	}
-	candidates = append(candidates,
+	candidates := []string{
 		filepath.Join(binDir, "lineops-singbox"),
 		filepath.Join(binDir, "sing-box"),
 		"/usr/local/bin/sing-box",
 		"/usr/bin/sing-box",
-	)
+	}
 	for _, path := range candidates {
 		if err := protectedProgram(path); err != nil {
 			continue
@@ -69,43 +53,25 @@ func (e Engine) lifecycleBinary(ctx context.Context, targetVersion string) ([]by
 		}
 	}
 	if binDir != "" && safeDir(binDir, true) == nil {
-		wantVer := targetVersion
-		if wantVer == "" {
-			wantVer = DefaultSingboxVersion
-		}
 		arch := runtime.GOARCH
-		urls := []string{
-			"https://github.com/yo-brian/lineops-agent/releases/latest/download/lineops-singbox-" + wantVer + "-linux-" + arch,
-		}
-		if targetVersion == "" || targetVersion == "1.14.0" {
-			urls = append(urls, "https://github.com/yo-brian/lineops-agent/releases/latest/download/lineops-singbox-linux-"+arch)
-		}
-		tmpFile := filepath.Join(binDir, ".lineops-singbox-download-"+wantVer)
+		url := "https://github.com/yo-brian/lineops-agent/releases/latest/download/lineops-singbox-linux-" + arch
+		tmpFile := filepath.Join(binDir, ".lineops-singbox-download-"+DefaultSingboxVersion)
 		defer os.Remove(tmpFile)
-		for _, url := range urls {
-			_ = os.Remove(tmpFile)
-			dlCtx, cancel := context.WithTimeout(ctx, 3*time.Minute)
-			err := exec.CommandContext(dlCtx, "curl", "--fail", "--silent", "--location", "--connect-timeout", "15", "--max-time", "180", "--retry", "2", url, "-o", tmpFile).Run()
-			cancel()
-			if err != nil {
-				continue
-			}
+		_ = os.Remove(tmpFile)
+		dlCtx, cancel := context.WithTimeout(ctx, 3*time.Minute)
+		err := exec.CommandContext(dlCtx, "curl", "--fail", "--silent", "--location", "--connect-timeout", "15", "--max-time", "180", "--retry", "2", url, "-o", tmpFile).Run()
+		cancel()
+		if err == nil {
 			_ = os.Chown(tmpFile, 0, 0)
 			_ = os.Chmod(tmpFile, 0755)
-			if protectedProgram(tmpFile) != nil {
-				continue
-			}
-			out, err := exec.CommandContext(ctx, tmpFile, "version").Output()
-			if err != nil {
-				continue
-			}
-			if matched := matchSupportedVersion(out, targetVersion); matched != "" {
-				data, err := readBinary(tmpFile)
-				if err == nil {
-					versionedPath := filepath.Join(binDir, "lineops-singbox-"+matched)
-					_ = writeFile(versionedPath, data, 0755)
-					_ = writeFile(filepath.Join(binDir, "lineops-singbox"), data, 0755)
-					return data, matched, nil
+			if protectedProgram(tmpFile) == nil {
+				if out, err := exec.CommandContext(ctx, tmpFile, "version").Output(); err == nil {
+					if matched := matchSupportedVersion(out, targetVersion); matched != "" {
+						if data, err := readBinary(tmpFile); err == nil {
+							_ = writeFile(filepath.Join(binDir, "lineops-singbox"), data, 0755)
+							return data, matched, nil
+						}
+					}
 				}
 			}
 		}
@@ -199,6 +165,9 @@ func (e Engine) Lifecycle(ctx context.Context, r LifecycleRequest) (LifecycleRes
 	return result, nil
 }
 func (e Engine) restartSingbox(ctx context.Context, request LifecycleRequest, result *LifecycleResult) error {
+	if request.TargetVersion != "" && !SupportedSingboxVersion(request.TargetVersion) {
+		return errors.New("unsupported_singbox_version")
+	}
 	unlock, err := e.locks(ctx, request.InstanceID)
 	if err != nil {
 		return errors.New("singbox_lock_failed")
@@ -212,118 +181,96 @@ func (e Engine) restartSingbox(ctx context.Context, request LifecycleRequest, re
 	if config.Epoch != request.Epoch || state.Fencing >= request.Fencing {
 		return errors.New("stale_lifecycle_task")
 	}
-	oldConfig := config
-	var oldBinary []byte
-	switched := false
-	if request.TargetVersion != "" {
-		if !SupportedSingboxVersion(request.TargetVersion) {
-			return errors.New("unsupported_singbox_version")
-		}
-		oldBinary, _ = readBinary(config.Binary)
-		data, resolvedVer, err := e.lifecycleBinary(ctx, request.TargetVersion)
-		if err != nil {
+	if !SupportedSingboxVersion(config.BinaryVersion) {
+		if err = e.pinInstanceBinaryLocked(ctx, dir, &config); err != nil {
 			return err
 		}
-		if err = writeFile(config.Binary, data, 0755); err != nil {
-			return errors.New("singbox_binary_write_failed")
-		}
-		sum := sha256.Sum256(data)
-		config.BinarySHA256 = hex.EncodeToString(sum[:])
-		config.BinaryVersion = resolvedVer
-		if err = writeJSON(filepath.Join(dir, "runtime.json"), config); err != nil {
-			if len(oldBinary) > 0 {
-				_ = writeFile(oldConfig.Binary, oldBinary, 0755)
-			}
-			return errors.New("singbox_registration_write_failed")
-		}
-		switched = true
 		result.Version = config.BinaryVersion
-		if state.LastResult == "unpublished" && state.CurrentVersion == "" {
-			if err = runtimeValid(ctx, config); err != nil {
-				return errors.New("singbox_binary_drift")
-			}
-			if err = verifyUnit(config, dir); err != nil {
-				return errors.New("singbox_unit_drift")
-			}
-			result.ServiceState = "stopped"
-			return nil
-		}
-	}
-	rollbackBinary := func() {
-		if switched && len(oldBinary) > 0 {
-			_ = writeFile(oldConfig.Binary, oldBinary, 0755)
-			_ = writeJSON(filepath.Join(dir, "runtime.json"), oldConfig)
-			result.Version = oldConfig.BinaryVersion
-			_ = e.Runtime.Restart(ctx, oldConfig, dir)
-		}
 	}
 	if state.LastResult != "succeeded" || state.CurrentVersion == "" || state.CurrentVersion != state.VerifiedVersion {
-		rollbackBinary()
 		return errors.New("singbox_recovery_required")
 	}
 	if target, x := os.Readlink(filepath.Join(dir, "current")); x != nil || target != "versions/"+state.CurrentVersion {
-		rollbackBinary()
 		return errors.New("current_pointer_drift")
 	}
 	if journal, x := activeJournal(dir); x == nil && pending(journal) || x != nil && !errors.Is(x, os.ErrNotExist) {
-		rollbackBinary()
 		return errors.New("singbox_recovery_required")
 	}
 	// Validate the exact existing version and current authorization. Never publish
 	// a new version or replay historical policy as a side effect of restarting.
 	if err = e.StartGate(request.InstanceID); err != nil {
-		rollbackBinary()
 		return errors.New("configuration_or_dependency_drift")
 	}
 	model, _, err := verifyVersion(dir, state.CurrentVersion)
 	if err != nil {
-		rollbackBinary()
 		return errors.New("configuration_or_dependency_drift")
 	}
 	versionDir := filepath.Join(dir, "versions", state.CurrentVersion)
 	if err = e.Runtime.Check(ctx, config, versionDir); err != nil {
-		rollbackBinary()
 		return errors.New("singbox_config_check_failed")
 	}
 	if err = e.Runtime.Restart(ctx, config, dir); err != nil {
 		if ctx.Err() != nil {
 			return errors.New("singbox_restart_result_unknown")
 		}
-		rollbackBinary()
 		return errors.New("singbox_restart_failed")
 	}
 	if err = e.Runtime.Healthy(ctx, config, versionDir, model); err != nil {
-		rollbackBinary()
 		return errors.New("fresh_protocol_health_failed")
 	}
 	result.ServiceState = "running"
 	return nil
 }
 
-func (e Engine) SwitchVersion(ctx context.Context, instanceID, targetVersion string) (string, error) {
-	if os.Geteuid() != 0 {
-		return "", errors.New("需要 root 权限")
+func (e Engine) pinInstanceBinaryLocked(ctx context.Context, dir string, config *RuntimeConfig) error {
+	expected := filepath.Join(e.ManagedPaths().SingboxDir, config.InstanceID, "sing-box")
+	if config.Binary != expected {
+		return errors.New("singbox_unmanaged_binary")
 	}
-	if !SupportedSingboxVersion(targetVersion) {
-		return "", errors.New("不支持的 sing-box 版本")
-	}
-	_, config, state, err := e.open(instanceID)
+	data, resolvedVer, err := e.lifecycleBinary(ctx, DefaultSingboxVersion)
 	if err != nil {
-		return "", err
+		return err
 	}
-	req := LifecycleRequest{
-		TaskID:        "00000000-0000-4000-8000-000000000000",
-		InstanceID:    instanceID,
-		Epoch:         config.Epoch,
-		Kind:          "restart_singbox",
-		Fencing:       state.Fencing + 1,
-		TargetVersion: targetVersion,
+	if err = writeFile(config.Binary, data, 0755); err != nil {
+		return errors.New("singbox_binary_write_failed")
 	}
-	var res LifecycleResult
-	if err := e.restartSingbox(ctx, req, &res); err != nil {
-		return "", err
+	sum := sha256.Sum256(data)
+	config.BinarySHA256 = hex.EncodeToString(sum[:])
+	config.BinaryVersion = resolvedVer
+	if err = writeJSON(filepath.Join(dir, "runtime.json"), *config); err != nil {
+		return errors.New("singbox_initialization_failed")
 	}
-	return res.Version, nil
+	return nil
+}
+
+func (e Engine) EnsurePinnedSingboxVersion(ctx context.Context) {
+	if os.Geteuid() != 0 {
+		return
+	}
+	entries, err := os.ReadDir(e.Root)
+	if err != nil {
+		return
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() || !identifier.MatchString(entry.Name()) {
+			continue
+		}
+		id := entry.Name()
+		unlock, err := e.locks(ctx, id)
+		if err != nil {
+			continue
+		}
+		dir, config, state, err := e.open(id)
+		if err == nil && !SupportedSingboxVersion(config.BinaryVersion) {
+			if e.pinInstanceBinaryLocked(ctx, dir, &config) == nil && state.LastResult == "succeeded" && state.CurrentVersion != "" && state.CurrentVersion == state.VerifiedVersion {
+				versionDir := filepath.Join(dir, "versions", state.CurrentVersion)
+				if e.Runtime.Check(ctx, config, versionDir) == nil {
+					_ = e.Runtime.Restart(ctx, config, dir)
+				}
+			}
+		}
+		unlock()
+	}
 }
 
 func (e Engine) installSingbox(ctx context.Context, r LifecycleRequest, result *LifecycleResult) error {
@@ -399,7 +346,7 @@ func (e Engine) uninstallSingbox(ctx context.Context, r LifecycleRequest, result
 	if config.Binary != expected {
 		return errors.New("singbox_unmanaged_binary")
 	}
-	if err = runtimeValid(ctx, config); err != nil {
+	if err = runtimeFilesValid(config); err != nil {
 		return errors.New("singbox_binary_drift")
 	}
 	if err = verifyUnit(config, dir); err != nil {

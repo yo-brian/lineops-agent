@@ -181,21 +181,25 @@ install -m 0755 -o root -g "$ROOT_GROUP" "$BIN_SRC" /etc/lineops/bin/lineops-age
 ln -f /etc/lineops/bin/lineops-agent /etc/lineops/bin/lineops-recovery
 ln -sf /etc/lineops/bin/lineops-agent /usr/local/bin/lineops-agent
 
-# Install or download lineops-singbox binary into /etc/lineops/bin/lineops-singbox
+# Install or download lineops-singbox (strictly v1.14.0) into /etc/lineops/bin/lineops-singbox
+rm -f /etc/lineops/bin/lineops-singbox-1.*
 SB_NAME="lineops-singbox-${OS_NAME}-${ARCH}"
 for sb in "$SCRIPT_DIR/$SB_NAME" "$SCRIPT_DIR/lineops-singbox" "$SCRIPT_DIR/sing-box" "/opt/homebrew/bin/sing-box"; do
-  if [[ -f "$sb" ]]; then
+  if [[ -f "$sb" ]] && "$sb" version 2>/dev/null | grep -qF "sing-box version 1.14.0" && "$sb" version 2>/dev/null | grep -qF "with_v2ray_api"; then
     install -m 0755 -o root -g "$ROOT_GROUP" "$sb" /etc/lineops/bin/lineops-singbox
     break
   fi
 done
 
-if [[ ! -f /etc/lineops/bin/lineops-singbox || "$UPGRADE" -eq 1 ]]; then
+if [[ ! -f /etc/lineops/bin/lineops-singbox || "$UPGRADE" -eq 1 ]] || ! /etc/lineops/bin/lineops-singbox version 2>/dev/null | grep -qF "sing-box version 1.14.0"; then
   TMP_SB="$TMP_DIR/$SB_NAME"
   if curl --fail --silent --location --connect-timeout 15 --max-time 600 --retry 2 \
     "$RELEASE_URL/$SB_NAME" -o "$TMP_SB" 2>/dev/null; then
-    install -m 0755 -o root -g "$ROOT_GROUP" "$TMP_SB" /etc/lineops/bin/lineops-singbox
-    echo "Downloaded $SB_NAME into /etc/lineops/bin/lineops-singbox"
+    chmod 0755 "$TMP_SB"
+    if "$TMP_SB" version 2>/dev/null | grep -qF "sing-box version 1.14.0"; then
+      install -m 0755 -o root -g "$ROOT_GROUP" "$TMP_SB" /etc/lineops/bin/lineops-singbox
+      echo "Downloaded $SB_NAME (v1.14.0) into /etc/lineops/bin/lineops-singbox"
+    fi
   fi
 fi
 

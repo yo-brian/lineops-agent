@@ -263,12 +263,18 @@ func NewInProcess(paths agentconfig.Paths) (*Client, error) {
 	if err := ownedDirectory(paths.InstancesDir); err != nil {
 		return nil, err
 	}
+	eng := release.Engine{Root: paths.InstancesDir, Paths: paths, Runtime: release.SystemdRuntime{}}
 	h := &handler{
-		engine:               release.Engine{Root: paths.InstancesDir, Paths: paths, Runtime: release.SystemdRuntime{}},
+		engine:               eng,
 		validateRegistration: func(id string) error { return registration(paths.InstancesDir, id) },
 		active:               make(chan struct{}, 4),
 		verifying:            make(chan struct{}, 2),
 	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+		defer cancel()
+		eng.EnsurePinnedSingboxVersion(ctx)
+	}()
 	return &Client{
 		http: &http.Client{
 			Transport:     inProcessTransport{handler: h},
